@@ -34,13 +34,24 @@ export function getApiErrorMessage(err: unknown): string {
   if (!axios.isAxiosError(err)) return fallback;
 
   const data = err.response?.data as ApiErrorResponse | undefined;
-  return data?.message || fallback;
+
+  if (typeof data?.message === 'string' && data.message.trim()) {
+    return data.message;
+  }
+
+  // fallback to first error item if present
+  if (Array.isArray(data?.errors) && typeof data.errors[0] === 'string') {
+    const first = data.errors[0].trim();
+    if (first) return first;
+  }
+
+  return fallback;
 }
 
 export function getApiErrorList(err: unknown): string[] {
   if (!axios.isAxiosError(err)) return [];
   const data = err.response?.data as ApiErrorResponse | undefined;
-  return Array.isArray(data?.errors) ? data!.errors! : [];
+  return Array.isArray(data?.errors) ? data.errors : [];
 }
 
 // -------------------- API functions (exported where needed) --------------------
@@ -81,7 +92,6 @@ async function updateProfileApi(
     formData,
     {
       headers: {
-        // override default JSON header
         'Content-Type': 'multipart/form-data',
       },
     }
@@ -92,20 +102,30 @@ async function updateProfileApi(
 
 // -------------------- Hooks --------------------
 export function useProfileQuery() {
+  const token = authTokenStorage.get();
+
   return useQuery({
     queryKey: authQueryKeys.profile,
     queryFn: fetchProfile,
+    enabled: typeof window !== 'undefined' && Boolean(token),
     staleTime: 30_000,
+
+    // stop request spam while debugging / token invalid
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 }
 
 export function useLoginMutation() {
   return useMutation({
     mutationFn: (payload: LoginRequest) => loginApi(payload),
-    onSuccess: (data) => {
-      // default: remember true for MVP (match your previous behavior if needed)
-      authTokenStorage.set(data.data.token, true);
-    },
+
+    /**
+     * IMPORTANT (A2.5):
+     * Do NOT store token here because:
+     * - "Remember Me" lives in UI
+     * - Token storage should be single-source in LoginForm (MVP)
+     */
   });
 }
 
@@ -113,7 +133,7 @@ export function useRegisterMutation() {
   return useMutation({
     mutationFn: (payload: RegisterRequest) => registerApi(payload),
     onSuccess: (data) => {
-      // auto-login from register token (A2.6)
+      // NOTE: This is A3 behavior (auto-login after register)
       authTokenStorage.set(data.data.token, true);
     },
   });
@@ -125,7 +145,6 @@ export function useUpdateProfileMutation() {
   return useMutation({
     mutationFn: (payload: UpdateProfileRequest) => updateProfileApi(payload),
     onSuccess: (res) => {
-      // instant UI update, no refetch needed
       qc.setQueryData<ProfileResponse>(authQueryKeys.profile, (prev) => {
         if (!prev || !prev.success) {
           return { success: true, message: res.message, data: res.data };
