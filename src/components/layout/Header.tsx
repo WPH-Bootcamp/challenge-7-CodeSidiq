@@ -130,7 +130,7 @@ const Header = ({ className }: HeaderProps) => {
       )}
     >
       {/* lock height to prevent jump */}
-      <div className='mx-auto flex h-20 w-full max-w-360 items-center justify-between px-6 lg:px-16 xl:px-[120px]'>
+      <div className='mx-auto flex h-20 w-full max-w-360 items-center justify-between px-6 lg:px-16 xl:px-30'>
         {/* Left: Logo */}
         <Link href='/' className='flex items-center gap-3' aria-label='Foody'>
           <Image
@@ -241,8 +241,13 @@ const Header = ({ className }: HeaderProps) => {
                   role='menu'
                   className='absolute right-0 top-14 w-80 rounded-2xl border bg-card p-5 text-card-foreground shadow-lg'
                 >
-                  {/* User header (match Figma hierarchy) */}
-                  <div className='flex items-center gap-3'>
+                  {/* ✅ clickable user header → /profile */}
+                  <Link
+                    href='/profile'
+                    onClick={handleCloseMenu}
+                    className='flex items-center gap-3 rounded-xl p-2 transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                    role='menuitem'
+                  >
                     <div className='relative h-12 w-12 overflow-hidden rounded-full bg-muted'>
                       {avatarUrl ? (
                         <Image
@@ -263,8 +268,11 @@ const Header = ({ className }: HeaderProps) => {
                       <p className='truncate text-lg font-semibold leading-none'>
                         {displayName}
                       </p>
+                      <p className='text-sm text-muted-foreground'>
+                        View Profile
+                      </p>
                     </div>
-                  </div>
+                  </Link>
 
                   <div className='my-4 h-px w-full bg-border' />
 
@@ -303,7 +311,6 @@ const Header = ({ className }: HeaderProps) => {
                       <span className='text-base font-medium'>My Orders</span>
                     </Link>
 
-                    {/* divider before logout (matches Figma separation) */}
                     <div className='my-2 h-px w-full bg-border' />
 
                     <button

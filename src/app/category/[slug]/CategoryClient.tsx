@@ -62,13 +62,25 @@ export default function CategoryClient({ slug }: Props) {
   const isSupported = SUPPORTED_SLUGS.has(categorySlug);
   const isUnsupported = UNSUPPORTED_SLUGS.has(categorySlug);
 
+  // ✅ Solution A: never hit API with empty location
+  const safeLocation = useMemo(
+    () => filters.location.trim(),
+    [filters.location]
+  );
+  const canFetch = safeLocation.length > 0;
+
   // Distance = server-side query param (location/range)
-  const restaurantsQuery = useRestaurantsQuery({
-    location: filters.location,
-    range: filters.range,
-    page: 1,
-    limit: 50,
-  });
+  const restaurantsQuery = useRestaurantsQuery(
+    {
+      location: safeLocation,
+      range: filters.range,
+      page: 1,
+      limit: 50,
+    },
+    {
+      enabled: canFetch && isSupported,
+    }
+  );
 
   const baseRestaurants =
     restaurantsQuery.data?.restaurants ?? EMPTY_RESTAURANTS;
@@ -84,10 +96,6 @@ export default function CategoryClient({ slug }: Props) {
 
     let items = baseRestaurants.slice();
 
-    // slug-based derived filter (minimal for MVP)
-    // 'all' -> no extra filter
-    // 'nearby' -> data already range-filtered server-side, no extra filter needed
-    // If later you want category cuisine mapping, do it here (derived, not fetch).
     if (q.length > 0) {
       items = items.filter((r) => r.name.toLowerCase().includes(q));
     }
@@ -101,7 +109,6 @@ export default function CategoryClient({ slug }: Props) {
         const min = r.priceRange?.min;
         const max = r.priceRange?.max;
 
-        // If backend doesn't provide priceRange, we cannot safely include it in price filtering
         if (typeof min !== 'number' || typeof max !== 'number') return false;
 
         if (typeof priceMin === 'number' && max < priceMin) return false;
@@ -133,6 +140,40 @@ export default function CategoryClient({ slug }: Props) {
           primaryCta={{ label: 'Back to Home', href: '/' }}
           secondaryCta={{ label: 'All Restaurant', href: '/category/all' }}
         />
+      </div>
+    );
+  }
+
+  // ✅ Optional UX: kalau location kosong, jangan "Loading", kasih instruksi
+  if (!canFetch) {
+    return (
+      <div className='mx-auto w-full max-w-6xl px-4 py-8'>
+        <p className='text-sm text-muted-foreground'>
+          Please enter a location to fetch restaurants.
+        </p>
+
+        <div className='mt-6 grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]'>
+          <CategoryFilterPanel
+            location={filters.location}
+            range={filters.range}
+            onChangeLocation={(v) => dispatch(setLocation(v))}
+            onChangeRange={(v) => dispatch(setRange(v))}
+            searchQuery={filters.searchQuery}
+            onChangeSearch={(v) => dispatch(setSearchQuery(v))}
+            sortBy={filters.sortBy}
+            onChangeSort={(v) => dispatch(setSortBy(v))}
+            priceMin={filters.priceMin}
+            priceMax={filters.priceMax}
+            onChangePriceMin={(v) => dispatch(setPriceMin(v))}
+            onChangePriceMax={(v) => dispatch(setPriceMax(v))}
+            ratingMin={filters.ratingMin}
+            onChangeRatingMin={(v) => dispatch(setRatingMin(v))}
+          />
+
+          <div className='min-w-0'>
+            <RestaurantList restaurants={EMPTY_RESTAURANTS} />
+          </div>
+        </div>
       </div>
     );
   }
@@ -178,12 +219,10 @@ export default function CategoryClient({ slug }: Props) {
 
       <div className='grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]'>
         <CategoryFilterPanel
-          // distance (server params)
           location={filters.location}
           range={filters.range}
           onChangeLocation={(v) => dispatch(setLocation(v))}
           onChangeRange={(v) => dispatch(setRange(v))}
-          // derived
           searchQuery={filters.searchQuery}
           onChangeSearch={(v) => dispatch(setSearchQuery(v))}
           sortBy={filters.sortBy}
@@ -215,10 +254,9 @@ const compareRestaurants = (
   const aMin = a.priceRange?.min;
   const bMin = b.priceRange?.min;
 
-  // missing priceRange should go last in price sorting
   const aVal = typeof aMin === 'number' ? aMin : Number.POSITIVE_INFINITY;
   const bVal = typeof bMin === 'number' ? bMin : Number.POSITIVE_INFINITY;
 
   if (sortBy === 'price-asc') return aVal - bVal;
-  return bVal - aVal; // price-desc
+  return bVal - aVal;
 };

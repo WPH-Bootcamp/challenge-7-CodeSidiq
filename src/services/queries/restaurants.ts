@@ -1,5 +1,5 @@
 // src/services/queries/restaurants.ts
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 
 import { api } from '@/services/api/axios';
@@ -20,7 +20,6 @@ export const restaurantQueryKeys = {
   restaurants: (params?: GetRestaurantsParams) =>
     [
       'restaurants',
-      // stable decomposition beats object identity pain
       params?.location ?? '',
       params?.range ?? null,
       params?.priceMin ?? null,
@@ -28,6 +27,20 @@ export const restaurantQueryKeys = {
       params?.rating ?? null,
       params?.category ?? '',
       params?.page ?? 1,
+      params?.limit ?? 20,
+    ] as const,
+
+  // ✅ key khusus infinite (tanpa page supaya stable)
+  restaurantsInfinite: (params?: Omit<GetRestaurantsParams, 'page'>) =>
+    [
+      'restaurants',
+      'infinite',
+      params?.location ?? '',
+      params?.range ?? null,
+      params?.priceMin ?? null,
+      params?.priceMax ?? null,
+      params?.rating ?? null,
+      params?.category ?? '',
       params?.limit ?? 20,
     ] as const,
 
@@ -78,13 +91,49 @@ const assertSuccess = <TData>(
   throw new Error(response.message || 'Request failed');
 };
 
+// ✅ penting: jangan kirim query param kosong yang bikin backend 400
+const sanitizeRestaurantsParams = (
+  params?: GetRestaurantsParams
+): GetRestaurantsParams | undefined => {
+  if (!params) return undefined;
+
+  const clean: GetRestaurantsParams = { ...params };
+
+  // location: kalau kosong -> hapus
+  if (
+    typeof clean.location === 'string' &&
+    clean.location.trim().length === 0
+  ) {
+    delete (clean as Partial<GetRestaurantsParams>).location;
+  }
+
+  // category: kalau kosong -> hapus
+  if (
+    typeof clean.category === 'string' &&
+    clean.category.trim().length === 0
+  ) {
+    delete (clean as Partial<GetRestaurantsParams>).category;
+  }
+
+  // range: kalau bukan number valid -> hapus
+  if (typeof clean.range !== 'number' || Number.isNaN(clean.range)) {
+    delete (clean as Partial<GetRestaurantsParams>).range;
+  }
+
+  // page/limit defaults
+  if (!clean.page || clean.page < 1) clean.page = 1;
+  if (!clean.limit || clean.limit < 1) clean.limit = 20;
+
+  return clean;
+};
+
 const fetchRestaurants = async (
   params?: GetRestaurantsParams
 ): Promise<RestaurantsListData> => {
   try {
     const res = await api.get<
       ApiSuccessResponse<RestaurantsListData> | ApiErrorResponse
-    >('/api/resto', { params });
+    >('/api/resto', { params: sanitizeRestaurantsParams(params) });
     return assertSuccess(res.data).data;
   } catch (err) {
     throw new Error(getApiErrorMessage(err));
@@ -147,6 +196,27 @@ export const useRestaurantsQuery = (params?: GetRestaurantsParams) => {
   return useQuery({
     queryKey: restaurantQueryKeys.restaurants(params),
     queryFn: () => fetchRestaurants(params),
+  });
+};
+
+// ✅ NEW: Infinite query buat Show More (pagination)
+export const useInfiniteRestaurantsQuery = (
+  params?: Omit<GetRestaurantsParams, 'page'>
+) => {
+  return useInfiniteQuery({
+    queryKey: restaurantQueryKeys.restaurantsInfinite(params),
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
+      fetchRestaurants({
+        ...params,
+        page: Number(pageParam),
+      }),
+    getNextPageParam: (lastPage) => {
+      const current = lastPage.pagination?.page ?? 1;
+      const totalPages = lastPage.pagination?.totalPages ?? 1;
+      if (current < totalPages) return current + 1;
+      return undefined;
+    },
   });
 };
 
