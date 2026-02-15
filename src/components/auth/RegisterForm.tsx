@@ -4,7 +4,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Eye, EyeOff } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,18 +15,13 @@ import {
   getApiErrorMessage,
   useRegisterMutation,
 } from '@/services/queries/auth';
+import type { RegisterRequest } from '@/types/auth';
 
 type FieldErrors = Partial<
   Record<'name' | 'email' | 'phone' | 'password' | 'confirmPassword', string>
 >;
 
-const DEMO_FILL = {
-  name: 'John Doe',
-  email: 'johndoe@email.com',
-  phone: '081234567890',
-  password: 'johdoe123',
-  confirmPassword: 'johdoe123',
-};
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
 const RegisterForm = () => {
   const router = useRouter();
@@ -42,69 +37,73 @@ const RegisterForm = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
 
-  const [localErrors, setLocalErrors] = useState<FieldErrors>({});
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<string>('');
-
-  const mergedErrors = useMemo(() => localErrors, [localErrors]);
 
   const validate = (): FieldErrors => {
     const next: FieldErrors = {};
 
     const n = name.trim();
-    const e = email.trim();
+    const e = normalizeEmail(email);
     const p = phone.trim();
 
     if (!n) next.name = 'Name must be filled in.';
-    else if (n.length < 2) next.name = 'Name terlalu pendek.';
+    else if (n.length < 2) next.name = 'Name too short.';
 
     if (!e) next.email = 'Email must be filled in.';
-    else if (!/^\S+@\S+\.\S+$/.test(e))
-      next.email = 'Format email tidak valid.';
+    else if (!/^\S+@\S+\.\S+$/.test(e)) next.email = 'Invalid email format.';
 
     if (!p) next.phone = 'Phone number must be filled in.';
-    else if (!/^\d+$/.test(p)) next.phone = 'Phone hanya boleh angka.';
-    else if (p.length < 10) next.phone = 'Phone minimal 10 digit.';
+    else if (!/^\d+$/.test(p)) next.phone = 'Phone must be numeric.';
+    else if (p.length < 10) next.phone = 'Phone min 10 digits.';
 
     if (!password) next.password = 'Password must be filled in.';
-    else if (password.length < 6)
-      next.password = 'Password minimal 6 karakter.';
+    else if (password.length < 6) next.password = 'Password min 6 chars.';
 
     if (!confirmPassword)
-      next.confirmPassword = 'Confirm password wajib diisi.';
+      next.confirmPassword = 'Confirm password is required.';
     else if (confirmPassword !== password)
-      next.confirmPassword = 'Confirm password tidak sama.';
+      next.confirmPassword = 'Confirm password does not match.';
 
     return next;
   };
 
   const clearFieldError = (key: keyof FieldErrors) => {
-    setLocalErrors((prev) => ({ ...prev, [key]: undefined }));
+    setErrors((prev) => ({ ...prev, [key]: undefined }));
   };
 
   const runRegister = async () => {
     setServerError('');
 
-    const res = await registerMutation.mutateAsync({
+    const payload: RegisterRequest = {
       name: name.trim(),
-      email: email.trim(),
+      email: normalizeEmail(email),
       phone: phone.trim(),
       password,
-    });
+    };
 
-    // Swagger returns token → auto-login MVP
-    // No "remember me" in register design. We store persistently by default for MVP.
-    authTokenStorage.set(res.data.token, true);
+    // ✅ contract: hook expects { payload, rememberMe }
+    await registerMutation.mutateAsync({ payload, rememberMe: true });
 
-    try {
-      await queryClient.fetchQuery({
-        queryKey: authQueryKeys.profile,
-        queryFn: fetchProfile,
-      });
-    } catch {
-      // Best effort, do not block.
+    // token may or may not exist depending on backend behavior
+    const token = authTokenStorage.get();
+
+    if (token) {
+      try {
+        await queryClient.fetchQuery({
+          queryKey: authQueryKeys.profile,
+          queryFn: fetchProfile,
+        });
+      } catch {
+        // best effort
+      }
+
+      router.replace('/');
+      return;
     }
 
-    router.replace('/');
+    // no token returned: go login
+    router.replace('/auth/login');
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -120,7 +119,7 @@ const RegisterForm = () => {
     );
 
     if (hasErrors) {
-      setLocalErrors(nextErrors);
+      setErrors(nextErrors);
       setServerError('');
       return;
     }
@@ -136,7 +135,6 @@ const RegisterForm = () => {
 
   return (
     <section className='flex flex-col gap-6'>
-      {/* Header */}
       <header className='flex flex-col gap-3'>
         <div className='flex items-center gap-3'>
           <Image
@@ -151,135 +149,104 @@ const RegisterForm = () => {
 
         <div className='flex flex-col gap-1'>
           <h1 className='text-2xl font-semibold text-foreground'>
-            Welcome Back
+            Create Account
           </h1>
           <p className='text-sm text-muted-foreground'>
-            Good to see you again! Let’s eat
+            Fill your details to continue
           </p>
         </div>
       </header>
 
-      {/* Tabs */}
-      <div className='rounded-full bg-muted p-1'>
-        <div className='grid grid-cols-2 gap-1'>
-          <button
-            type='button'
-            onClick={() => router.push('/auth/login')}
-            className='h-10 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground'
-          >
-            Sign in
-          </button>
-
-          <button
-            type='button'
-            className='h-10 rounded-full bg-card text-sm font-medium text-foreground shadow-sm'
-            aria-current='page'
-          >
-            Sign up
-          </button>
-        </div>
-      </div>
-
-      {/* Server error */}
       {serverError ? (
         <div className='rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3'>
           <p className='text-sm text-destructive'>{serverError}</p>
         </div>
       ) : null}
 
-      {/* Form */}
       <form onSubmit={handleSubmit} className='flex flex-col gap-4'>
-        {/* Name */}
         <div className='space-y-2'>
           <Input
             value={name}
             onChange={(e) => {
-              const v = e.target.value;
-              setName(v);
+              setName(e.target.value);
               setServerError('');
               clearFieldError('name');
             }}
             placeholder='Name'
-            aria-invalid={Boolean(mergedErrors.name)}
+            aria-invalid={Boolean(errors.name)}
             className={[
               'h-12 rounded-xl bg-card',
-              mergedErrors.name
+              errors.name
                 ? 'border-destructive focus-visible:ring-destructive'
                 : '',
             ].join(' ')}
           />
-          {mergedErrors.name ? (
-            <p className='text-xs text-destructive'>{mergedErrors.name}</p>
+          {errors.name ? (
+            <p className='text-xs text-destructive'>{errors.name}</p>
           ) : null}
         </div>
 
-        {/* Email */}
         <div className='space-y-2'>
           <Input
             type='email'
             value={email}
             onChange={(e) => {
-              const v = e.target.value;
-              setEmail(v);
+              setEmail(e.target.value);
               setServerError('');
               clearFieldError('email');
             }}
             placeholder='Email'
-            aria-invalid={Boolean(mergedErrors.email)}
+            aria-invalid={Boolean(errors.email)}
             className={[
               'h-12 rounded-xl bg-card',
-              mergedErrors.email
+              errors.email
                 ? 'border-destructive focus-visible:ring-destructive'
                 : '',
             ].join(' ')}
           />
-          {mergedErrors.email ? (
-            <p className='text-xs text-destructive'>{mergedErrors.email}</p>
+          {errors.email ? (
+            <p className='text-xs text-destructive'>{errors.email}</p>
           ) : null}
         </div>
 
-        {/* Phone */}
         <div className='space-y-2'>
           <Input
             value={phone}
             onChange={(e) => {
-              const v = e.target.value;
-              setPhone(v);
+              setPhone(e.target.value);
               setServerError('');
               clearFieldError('phone');
             }}
             placeholder='Number Phone'
             inputMode='numeric'
-            aria-invalid={Boolean(mergedErrors.phone)}
+            aria-invalid={Boolean(errors.phone)}
             className={[
               'h-12 rounded-xl bg-card',
-              mergedErrors.phone
+              errors.phone
                 ? 'border-destructive focus-visible:ring-destructive'
                 : '',
             ].join(' ')}
           />
-          {mergedErrors.phone ? (
-            <p className='text-xs text-destructive'>{mergedErrors.phone}</p>
+          {errors.phone ? (
+            <p className='text-xs text-destructive'>{errors.phone}</p>
           ) : null}
         </div>
 
-        {/* Password */}
         <div className='space-y-2'>
           <div className='relative'>
             <Input
               type={showPassword ? 'text' : 'password'}
               value={password}
               onChange={(e) => {
-                const v = e.target.value;
-                setPassword(v);
+                setPassword(e.target.value);
                 setServerError('');
                 clearFieldError('password');
               }}
               placeholder='Password'
-              aria-invalid={Boolean(mergedErrors.password)}
+              aria-invalid={Boolean(errors.password)}
               className={[
                 'h-12 rounded-xl bg-card pr-12',
-                mergedErrors.password
+                errors.password
                   ? 'border-destructive focus-visible:ring-destructive'
                   : '',
               ].join(' ')}
@@ -297,28 +264,26 @@ const RegisterForm = () => {
               )}
             </button>
           </div>
-          {mergedErrors.password ? (
-            <p className='text-xs text-destructive'>{mergedErrors.password}</p>
+          {errors.password ? (
+            <p className='text-xs text-destructive'>{errors.password}</p>
           ) : null}
         </div>
 
-        {/* Confirm Password */}
         <div className='space-y-2'>
           <div className='relative'>
             <Input
               type={showConfirm ? 'text' : 'password'}
               value={confirmPassword}
               onChange={(e) => {
-                const v = e.target.value;
-                setConfirmPassword(v);
+                setConfirmPassword(e.target.value);
                 setServerError('');
                 clearFieldError('confirmPassword');
               }}
               placeholder='Confirm Password'
-              aria-invalid={Boolean(mergedErrors.confirmPassword)}
+              aria-invalid={Boolean(errors.confirmPassword)}
               className={[
                 'h-12 rounded-xl bg-card pr-12',
-                mergedErrors.confirmPassword
+                errors.confirmPassword
                   ? 'border-destructive focus-visible:ring-destructive'
                   : '',
               ].join(' ')}
@@ -336,33 +301,9 @@ const RegisterForm = () => {
               )}
             </button>
           </div>
-          {mergedErrors.confirmPassword ? (
-            <p className='text-xs text-destructive'>
-              {mergedErrors.confirmPassword}
-            </p>
+          {errors.confirmPassword ? (
+            <p className='text-xs text-destructive'>{errors.confirmPassword}</p>
           ) : null}
-        </div>
-
-        {/* (Optional) Demo fill for design testing */}
-        <div className='flex items-center justify-between'>
-          <button
-            type='button'
-            className='text-xs text-muted-foreground hover:text-foreground underline underline-offset-4'
-            onClick={() => {
-              setName(DEMO_FILL.name);
-              setEmail(DEMO_FILL.email);
-              setPhone(DEMO_FILL.phone);
-              setPassword(DEMO_FILL.password);
-              setConfirmPassword(DEMO_FILL.confirmPassword);
-              setLocalErrors({});
-              setServerError('');
-            }}
-          >
-            Fill demo
-          </button>
-          <span className='text-xs text-muted-foreground'>
-            {/* spacer for layout balance */}
-          </span>
         </div>
 
         <Button

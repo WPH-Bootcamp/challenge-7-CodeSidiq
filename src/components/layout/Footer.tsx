@@ -1,3 +1,4 @@
+// src/components/layout/Footer.tsx
 import Image from 'next/image';
 import Link from 'next/link';
 
@@ -31,21 +32,45 @@ const socialIcons = [
   { alt: 'TikTok', src: '/assets/icons/tiktok.svg', href: '#' },
 ];
 
+const FOOTER_CONTAINER = cn(
+  'mx-auto w-full max-w-[1000px]',
+  'px-6 sm:px-6 lg:px-16',
+  'py-[clamp(2.5rem,6vw,5rem)]'
+);
+
 const Footer = ({ className }: FooterProps) => {
   return (
-    <footer className={cn('w-full bg-foreground text-background', className)}>
+    <footer
+      className={cn(
+        // stable paint layer
+        'relative isolate w-full bg-foreground text-background',
+        // GPU/compositing stability
+        'transform-gpu will-change-transform',
+        className
+      )}
+    >
+      {/* seam masks */}
       <div
-        className={cn(
-          'mx-auto w-full max-w-360 px-6 xl:px-30',
-          // vertical spacing: clamp(min, fluid, max) in rem
-          'py-[clamp(2.5rem,6vw,5rem)]'
-        )}
-      >
-        {/* Desktop: 3 columns. Mobile: brand on top, links as 2-column grid */}
+        aria-hidden='true'
+        className='pointer-events-none absolute inset-x-0 top-0 h-3 bg-foreground'
+      />
+      <div
+        aria-hidden='true'
+        className='pointer-events-none absolute inset-x-0 bottom-0 h-3 bg-foreground'
+      />
+
+      <div className={FOOTER_CONTAINER}>
         <div className='grid gap-[clamp(2rem,5vw,3rem)] lg:grid-cols-3 lg:items-start'>
           {/* Brand */}
           <div className='max-w-[24rem]'>
-            <div className='flex items-center gap-3'>
+            <Link
+              href='/'
+              aria-label='Go to home'
+              className={cn(
+                'inline-flex items-center gap-3 cursor-pointer select-none',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background focus-visible:ring-offset-2 focus-visible:ring-offset-foreground'
+              )}
+            >
               <Image
                 src='/assets/icons/logo.svg'
                 alt='Foody logo'
@@ -53,7 +78,7 @@ const Footer = ({ className }: FooterProps) => {
                 height={32}
               />
               <span className='text-2xl font-semibold leading-none'>Foody</span>
-            </div>
+            </Link>
 
             <p className='mt-4 text-sm leading-6 text-background/70'>
               Enjoy homemade flavors &amp; chef&apos;s signature dishes, freshly
@@ -70,18 +95,21 @@ const Footer = ({ className }: FooterProps) => {
                   aria-label={item.alt}
                   className='inline-flex h-11 w-11 items-center justify-center rounded-full bg-background/10 hover:bg-background/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background focus-visible:ring-offset-2 focus-visible:ring-offset-foreground'
                 >
-                  <Image src={item.src} alt={item.alt} width={40} height={40} />
+                  <Image
+                    src={item.src}
+                    alt=''
+                    aria-hidden='true'
+                    width={40}
+                    height={40}
+                    className='block'
+                  />
                 </Link>
               ))}
             </div>
           </div>
 
-          {/* Links wrapper:
-              - Mobile: 2 columns (Explore + Help) on sm and up
-              - Very small screens (< sm): stack 1 column
-              - Desktop: these occupy col 2 and 3 naturally */}
+          {/* Links */}
           <div className='grid gap-[clamp(1.5rem,4vw,2rem)] min-[420px]:grid-cols-2 lg:col-span-2 lg:grid-cols-2'>
-            {/* Explore */}
             <div className='lg:mx-auto lg:w-full lg:max-w-50'>
               <h3 className='text-sm font-semibold'>Explore</h3>
               <ul className='mt-4 space-y-3 text-sm text-background/70'>
@@ -95,7 +123,6 @@ const Footer = ({ className }: FooterProps) => {
               </ul>
             </div>
 
-            {/* Help */}
             <div className='lg:ml-auto lg:w-full lg:max-w-50'>
               <h3 className='text-sm font-semibold'>Help</h3>
               <ul className='mt-4 space-y-3 text-sm text-background/70'>

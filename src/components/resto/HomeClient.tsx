@@ -3,8 +3,10 @@
 
 import Image from 'next/image';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useRouter } from 'next/navigation';
+import { useMemo, useState } from 'react';
 
+import { ShowMoreButton } from '@/components/common/ShowMoreButton';
 import { RestaurantList } from '@/components/resto/RestaurantList';
 import { Input } from '@/components/ui/input';
 import { useInfiniteRestaurantsQuery } from '@/services/queries/restaurants';
@@ -39,8 +41,11 @@ const shortcuts = [
 ] as const;
 
 export const HomeClient = () => {
-  // ✅ Section ini dipakai sebagai “Recommended” versi pagination
-  // Best practice: limit kecil supaya UI cepat. Misal 9 untuk grid 3x3.
+  const router = useRouter();
+  const [searchValue, setSearchValue] = useState('');
+
+  const hasQuery = searchValue.trim().length > 0;
+
   const restaurantsInfinite = useInfiniteRestaurantsQuery({ limit: 9 });
 
   const restaurants = useMemo(() => {
@@ -55,11 +60,18 @@ export const HomeClient = () => {
   const canShowMore = Boolean(restaurantsInfinite.hasNextPage);
   const isLoadingMore = restaurantsInfinite.isFetchingNextPage;
 
+  const handleSubmitSearch = () => {
+    const q = searchValue.trim();
+    if (!q) return;
+
+    router.push(`/search?q=${encodeURIComponent(q)}`);
+  };
+
   return (
     <main>
       {/* Hero */}
       <section className='relative'>
-        <div className='relative h-[420px] w-full overflow-hidden sm:h-[520px]'>
+        <div className='relative h-110 w-full overflow-hidden sm:h-140'>
           <Image
             src='/assets/images/hero-home.svg'
             alt=''
@@ -68,50 +80,69 @@ export const HomeClient = () => {
             priority
             className='object-cover'
           />
-          <div className='absolute inset-0 bg-black/55' />
+          <div className='absolute inset-0 bg-black/60' />
         </div>
 
         {/* Hero content */}
         <div className='pointer-events-none absolute inset-0'>
-          <div className='mx-auto flex h-full max-w-360 flex-col items-center justify-center px-6 lg:px-16 xl:px-[120px] text-center'>
-            <h1 className='text-3xl font-semibold tracking-tight text-white sm:text-4xl'>
+          <div className='mx-auto flex h-full max-w-360 flex-col items-center justify-center px-6 text-center lg:px-16 xl:px-30'>
+            <h1 className='text-4xl font-semibold tracking-tight text-white sm:text-5xl'>
               Explore Culinary Experiences
             </h1>
 
-            <p className='mt-2 max-w-xl text-sm text-white/85 sm:text-base'>
+            <p className='mt-3 max-w-2xl text-sm leading-6 text-white/85 sm:text-base'>
               Search and refine your choice to discover the perfect restaurant.
             </p>
 
-            {/* Search pill (UI only for now) */}
-            <div className='pointer-events-auto mx-auto mt-6 w-full max-w-xl'>
-              <div className='relative rounded-full bg-white px-4 py-2 shadow-sm'>
+            {/* Search pill */}
+            <div className='pointer-events-auto mx-auto mt-8 w-full max-w-[42rem]'>
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSubmitSearch();
+                }}
+                className='relative rounded-full bg-white px-5 py-3 shadow-sm'
+              >
+                <Input
+                  value={searchValue}
+                  onChange={(e) => setSearchValue(e.target.value)}
+                  className='h-10 border-0 bg-transparent pl-11 pr-28 text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-0'
+                  placeholder='Search restaurants, food and drink'
+                />
+
                 <Image
                   src='/assets/icons/search.svg'
                   alt=''
                   aria-hidden='true'
                   width={18}
                   height={18}
-                  className='pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 opacity-60'
+                  className='pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 opacity-60'
                 />
-                <Input
-                  className='h-10 border-0 bg-transparent pl-10 pr-1 text-sm text-foreground placeholder:text-muted-foreground focus-visible:ring-0'
-                  placeholder='Search restaurants, food and drink'
-                />
-              </div>
+
+                <button
+                  type='submit'
+                  disabled={!hasQuery}
+                  className={`absolute right-4 top-1/2 -translate-y-1/2 rounded-full bg-primary px-5 py-2 text-xs font-semibold text-white shadow-sm transition hover:opacity-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring
+                    ${hasQuery ? 'opacity-100' : 'pointer-events-none opacity-0'}
+                  `}
+                >
+                  Search
+                </button>
+              </form>
             </div>
           </div>
         </div>
       </section>
 
       {/* Shortcuts row */}
-      <section className='mx-auto mt-12 max-w-360 px-6 lg:px-16 xl:px-[120px]'>
-        <div className='rounded-3xl bg-white p-5 shadow-sm'>
-          <div className='grid grid-cols-3 gap-4 sm:grid-cols-6'>
+      <section className='mx-auto mt-14 max-w-360 px-6 lg:px-16 xl:px-30'>
+        <div className='rounded-3xl bg-white p-6 shadow-sm'>
+          <div className='grid grid-cols-3 gap-5 sm:grid-cols-6'>
             {shortcuts.map((item) => (
               <Link
                 key={item.label}
                 href={item.href}
-                className='group flex flex-col items-center gap-2 rounded-2xl p-3 transition hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                className='group flex flex-col items-center gap-3 rounded-2xl p-3 transition hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
               >
                 <div className='flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/30'>
                   <Image
@@ -120,7 +151,7 @@ export const HomeClient = () => {
                     aria-hidden='true'
                     width={28}
                     height={28}
-                    className='transition group-hover:scale-[1.02]'
+                    className='transition group-hover:scale-[1.03]'
                   />
                 </div>
                 <span className='text-xs font-medium text-foreground'>
@@ -132,10 +163,10 @@ export const HomeClient = () => {
         </div>
       </section>
 
-      {/* Recommended (pagination from /api/resto) */}
-      <section className='mx-auto mt-12 max-w-360 px-6 lg:px-16 xl:px-[120px] pb-10'>
-        <div className='mb-6 flex items-center justify-between'>
-          <h2 className='text-lg font-semibold text-foreground'>Recommended</h2>
+      {/* Recommended */}
+      <section className='mx-auto mt-14 max-w-360 px-6 pb-14 lg:px-16 xl:px-30'>
+        <div className='mb-7 flex items-center justify-between'>
+          <h2 className='text-xl font-semibold text-foreground'>Recommended</h2>
           <Link
             href='/category/all'
             className='text-sm font-medium text-primary hover:opacity-90'
@@ -156,20 +187,12 @@ export const HomeClient = () => {
           <RestaurantList restaurants={restaurants} />
         )}
 
-        {/* Show more = fetch next page */}
-        <div className='mt-8 flex justify-center'>
-          <button
-            type='button'
-            onClick={() => restaurantsInfinite.fetchNextPage()}
-            disabled={!canShowMore || isLoadingMore}
-            className='rounded-full border bg-white px-6 py-2 text-xs font-medium text-foreground shadow-sm transition hover:bg-muted disabled:cursor-not-allowed disabled:opacity-60'
-          >
-            {isLoadingMore
-              ? 'Loading...'
-              : canShowMore
-                ? 'Show More'
-                : 'No More'}
-          </button>
+        <div className='mt-10 flex justify-center'>
+          <ShowMoreButton
+            canShowMore={canShowMore}
+            isLoadingMore={isLoadingMore}
+            onClickAction={() => restaurantsInfinite.fetchNextPage()}
+          />
         </div>
       </section>
     </main>

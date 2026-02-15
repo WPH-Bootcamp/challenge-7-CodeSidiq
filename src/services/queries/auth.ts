@@ -1,9 +1,9 @@
 // src/services/queries/auth.ts
-
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
+import { useEffect, useState } from 'react';
 
-import { api, authTokenStorage } from '@/services/api/axios';
+import { api, AUTH_TOKEN_EVENT, authTokenStorage } from '@/services/api/axios';
 import type {
   ApiErrorResponse,
   LoginRequest,
@@ -15,21 +15,14 @@ import type {
   UpdateProfileResponse,
 } from '@/types/auth';
 
-/**
- * IMPORTANT:
- * Keep backward-compatible exports used by existing auth UI:
- * - authQueryKeys
- * - fetchProfile
- * - getApiErrorMessage
- */
-
-// -------------------- Query Keys (exported) --------------------
 export const authQueryKeys = {
   profile: ['auth', 'profile'] as const,
 };
 
-// -------------------- Error helpers (exported) --------------------
-export function getApiErrorMessage(err: unknown): string {
+const CART_QUERY_KEY = ['cart'] as const;
+
+// ---------------- error helpers ----------------
+export const getApiErrorMessage = (err: unknown): string => {
   const fallback = 'Something went wrong. Please try again.';
   if (!axios.isAxiosError(err)) return fallback;
 
@@ -39,42 +32,58 @@ export function getApiErrorMessage(err: unknown): string {
     return data.message;
   }
 
-  // fallback to first error item if present
   if (Array.isArray(data?.errors) && typeof data.errors[0] === 'string') {
     const first = data.errors[0].trim();
     if (first) return first;
   }
 
   return fallback;
-}
+};
 
-export function getApiErrorList(err: unknown): string[] {
+export const getApiErrorList = (err: unknown): string[] => {
   if (!axios.isAxiosError(err)) return [];
-  const data = err.response?.data as ApiErrorResponse | undefined;
-  return Array.isArray(data?.errors) ? data.errors : [];
-}
 
-// -------------------- API functions (exported where needed) --------------------
-export async function fetchProfile(): Promise<ProfileResponse> {
+  const data = err.response?.data as ApiErrorResponse | undefined;
+  if (!data) return [];
+
+  if (Array.isArray(data.errors)) {
+    return data.errors
+      .filter((x): x is string => typeof x === 'string')
+      .map((x) => x.trim())
+      .filter(Boolean);
+  }
+
+  return [];
+};
+
+// ✅ backward-compatible helper (dipakai ProfileForm.tsx)
+export const authQueryHelpers = {
+  authQueryKeys,
+  getApiErrorMessage,
+  getApiErrorList,
+};
+
+// ---------------- API calls ----------------
+export const fetchProfile = async (): Promise<ProfileResponse> => {
   const res = await api.get<ProfileResponse>('/api/auth/profile');
   return res.data;
-}
+};
 
-async function loginApi(payload: LoginRequest): Promise<LoginResponse> {
+const loginApi = async (payload: LoginRequest): Promise<LoginResponse> => {
   const res = await api.post<LoginResponse>('/api/auth/login', payload);
   return res.data;
-}
+};
 
-async function registerApi(
+const registerApi = async (
   payload: RegisterRequest
-): Promise<RegisterResponse> {
+): Promise<RegisterResponse> => {
   const res = await api.post<RegisterResponse>('/api/auth/register', payload);
   return res.data;
-}
+};
 
-async function updateProfileApi(
+const updateProfileApi = async (
   payload: UpdateProfileRequest
-): Promise<UpdateProfileResponse> {
+): Promise<UpdateProfileResponse> => {
   const formData = new FormData();
 
   if (typeof payload.name === 'string') formData.append('name', payload.name);
@@ -89,57 +98,141 @@ async function updateProfileApi(
 
   const res = await api.put<UpdateProfileResponse>(
     '/api/auth/profile',
-    formData,
-    {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-      },
-    }
+    formData
   );
-
   return res.data;
-}
+};
 
-// -------------------- Hooks --------------------
-export function useProfileQuery() {
-  const token = authTokenStorage.get();
+// ---------------- token extraction (NO any) ----------------
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null;
+
+const pickString = (
+  obj: Record<string, unknown>,
+  key: string
+): string | null => {
+  const v = obj[key];
+  return typeof v === 'string' && v.trim() ? v : null;
+};
+
+/**
+ * Extract token from auth response defensively.
+ * Because different backends love different field names.
+ */
+const extractTokenFromAuthResponse = (res: unknown): string | null => {
+  if (!isObject(res)) return null;
+
+  const direct =
+    pickString(res, 'token') ??
+    pickString(res, 'accessToken') ??
+    pickString(res, 'access_token');
+
+  if (direct) return direct;
+
+  const data = res['data'];
+  if (!isObject(data)) return null;
+
+  return (
+    pickString(data, 'token') ??
+    pickString(data, 'accessToken') ??
+    pickString(data, 'access_token')
+  );
+};
+
+// ---------------- Reactive token state ----------------
+const useAuthTokenState = (): boolean => {
+  const [hasToken, setHasToken] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    return Boolean(authTokenStorage.get());
+  });
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const sync = () => setHasToken(Boolean(authTokenStorage.get()));
+
+    sync();
+    window.addEventListener(AUTH_TOKEN_EVENT, sync);
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'access_token') sync();
+    };
+    window.addEventListener('storage', onStorage);
+
+    return () => {
+      window.removeEventListener(AUTH_TOKEN_EVENT, sync);
+      window.removeEventListener('storage', onStorage);
+    };
+  }, []);
+
+  return hasToken;
+};
+
+export const useProfileQuery = () => {
+  const hasToken = useAuthTokenState();
 
   return useQuery({
     queryKey: authQueryKeys.profile,
     queryFn: fetchProfile,
-    enabled: typeof window !== 'undefined' && Boolean(token),
+    enabled: typeof window !== 'undefined' && hasToken,
     staleTime: 30_000,
-
-    // stop request spam while debugging / token invalid
     retry: false,
     refetchOnWindowFocus: false,
   });
-}
+};
 
-export function useLoginMutation() {
+// ---------------- MUTATIONS ----------------
+export const useLoginMutation = () => {
+  const qc = useQueryClient();
+
   return useMutation({
-    mutationFn: (payload: LoginRequest) => loginApi(payload),
+    mutationFn: async (vars: {
+      payload: LoginRequest;
+      rememberMe: boolean;
+    }) => {
+      const res = await loginApi(vars.payload);
 
-    /**
-     * IMPORTANT (A2.5):
-     * Do NOT store token here because:
-     * - "Remember Me" lives in UI
-     * - Token storage should be single-source in LoginForm (MVP)
-     */
-  });
-}
+      const token = extractTokenFromAuthResponse(res);
+      if (!token) {
+        throw new Error('Login succeeded but token is missing in response.');
+      }
 
-export function useRegisterMutation() {
-  return useMutation({
-    mutationFn: (payload: RegisterRequest) => registerApi(payload),
-    onSuccess: (data) => {
-      // NOTE: This is A3 behavior (auto-login after register)
-      authTokenStorage.set(data.data.token, true);
+      authTokenStorage.set(token, vars.rememberMe);
+      return res;
+    },
+    onSuccess: () => {
+      // ✅ After token set, re-enable profile & refresh server-state that needs auth
+      qc.invalidateQueries({ queryKey: authQueryKeys.profile });
+      qc.invalidateQueries({ queryKey: CART_QUERY_KEY }); // ✅ FIX: cart refetch
     },
   });
-}
+};
 
-export function useUpdateProfileMutation() {
+export const useRegisterMutation = () => {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (vars: {
+      payload: RegisterRequest;
+      rememberMe: boolean;
+    }) => {
+      const res = await registerApi(vars.payload);
+
+      const token = extractTokenFromAuthResponse(res);
+      if (token) {
+        authTokenStorage.set(token, vars.rememberMe);
+      }
+
+      return res;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: authQueryKeys.profile });
+      qc.invalidateQueries({ queryKey: CART_QUERY_KEY }); // ✅ FIX: cart refetch
+    },
+  });
+};
+
+export const useUpdateProfileMutation = () => {
   const qc = useQueryClient();
 
   return useMutation({
@@ -153,10 +246,4 @@ export function useUpdateProfileMutation() {
       });
     },
   });
-}
-
-// Optional convenience export (so you can use both styles)
-export const authQueryHelpers = {
-  getApiErrorMessage,
-  getApiErrorList,
 };

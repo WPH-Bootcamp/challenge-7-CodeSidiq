@@ -2,12 +2,15 @@
 
 // src/app/category/[slug]/CategoryClient.tsx
 import Link from 'next/link';
-import { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 
 import type { AppDispatch, RootState } from '@/lib/store';
 import { useRestaurantsQuery } from '@/services/queries/restaurants';
-import type { RestaurantListItem } from '@/types/restaurant';
+import type {
+  GetRestaurantsParams,
+  RestaurantListItem,
+} from '@/types/restaurant';
 
 import {
   resetFilters,
@@ -22,7 +25,6 @@ import {
   type SortBy,
 } from '@/features/filters/filtersSlice';
 
-import { NotAvailableYet } from '@/components/common/NotAvailableYet';
 import { CategoryFilterPanel } from '@/components/resto/CategoryFilterPanel';
 import { RestaurantList } from '@/components/resto/RestaurantList';
 
@@ -43,157 +45,227 @@ type Props = {
   slug: string;
 };
 
+/**
+ * Normalize for location compare:
+ * - trim
+ * - lowercase
+ * - collapse multiple spaces
+ */
+const normalizeText = (v: string) =>
+  v.trim().toLowerCase().replace(/\s+/g, ' ');
+
+/**
+ * Location matching rules (UX-driven):
+ * - If user types 1 token (e.g. "jakarta"): loose match -> place includes token
+ * - If user types 2+ tokens (e.g. "jakarta pusat"):
+ *    - Prefer exact phrase includes ("jakarta pusat")
+ *    - Otherwise require ALL meaningful tokens to exist in place
+ *
+ * This prevents "jakarta pusat" from matching "jakarta selatan/timur/barat".
+ */
+const placeMatchesLocation = (placeRaw: string, locationRaw: string) => {
+  const place = normalizeText(placeRaw);
+  const loc = normalizeText(locationRaw);
+
+  if (!place || !loc) return false;
+
+  // Direct phrase match wins
+  if (place.includes(loc)) return true;
+
+  const tokens = loc.split(' ').filter(Boolean);
+
+  // Single word: loose match
+  if (tokens.length === 1) {
+    const t = tokens[0];
+    // optional tiny guard: ignore very short token
+    if (t.length < 2) return false;
+    return place.includes(t);
+  }
+
+  // Multi-word: require ALL meaningful tokens (>= 3 chars) to exist.
+  // If user types "jakarta pusat" -> must include "jakarta" AND "pusat"
+  const meaningful = tokens.filter((t) => t.length >= 3);
+  if (meaningful.length === 0) return false;
+
+  return meaningful.every((t) => place.includes(t));
+};
+
 export default function CategoryClient({ slug }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const filters = useSelector((s: RootState) => s.filters);
 
+  // UI-only (drawer)
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
+
   const categorySlug = useMemo(() => normalizeSlug(slug), [slug]);
 
-  // Route-driven: keep redux in sync with route
-  useEffect(() => {
-    dispatch(setCategorySlug(categorySlug));
-
-    if (categorySlug === 'nearby' && (!filters.range || filters.range > 5)) {
-      dispatch(setRange(1));
-    }
-  }, [categorySlug, dispatch, filters.range]);
-
-  // feature gating
   const isSupported = SUPPORTED_SLUGS.has(categorySlug);
   const isUnsupported = UNSUPPORTED_SLUGS.has(categorySlug);
 
-  // ✅ Solution A: never hit API with empty location
-  const safeLocation = useMemo(
-    () => filters.location.trim(),
-    [filters.location]
-  );
-  const canFetch = safeLocation.length > 0;
+  // keep Redux category in sync (route-driven)
+  useEffect(() => {
+    dispatch(setCategorySlug(categorySlug));
+  }, [categorySlug, dispatch]);
 
-  // Distance = server-side query param (location/range)
-  const restaurantsQuery = useRestaurantsQuery(
-    {
-      location: safeLocation,
-      range: filters.range,
-      page: 1,
-      limit: 50,
-    },
-    {
-      enabled: canFetch && isSupported,
-    }
-  );
-
-  const baseRestaurants =
-    restaurantsQuery.data?.restaurants ?? EMPTY_RESTAURANTS;
-
-  // Derived filtering: search/sort/price/rating
-  const filteredRestaurants = useMemo(() => {
-    if (!isSupported) return [];
-
-    const q = filters.searchQuery.trim().toLowerCase();
-    const ratingMin = filters.ratingMin;
-    const priceMin = filters.priceMin;
-    const priceMax = filters.priceMax;
-
-    let items = baseRestaurants.slice();
-
-    if (q.length > 0) {
-      items = items.filter((r) => r.name.toLowerCase().includes(q));
-    }
-
-    if (typeof ratingMin === 'number') {
-      items = items.filter((r) => r.star >= ratingMin);
-    }
-
-    if (typeof priceMin === 'number' || typeof priceMax === 'number') {
-      items = items.filter((r) => {
-        const min = r.priceRange?.min;
-        const max = r.priceRange?.max;
-
-        if (typeof min !== 'number' || typeof max !== 'number') return false;
-
-        if (typeof priceMin === 'number' && max < priceMin) return false;
-        if (typeof priceMax === 'number' && min > priceMax) return false;
-        return true;
-      });
-    }
-
-    const sortBy = filters.sortBy;
-    items.sort((a, b) => compareRestaurants(a, b, sortBy));
-
-    return items;
+  /**
+   * ✅ Keyed remount for filter panel (avoid setState in effect)
+   * When committed Redux values change (especially reset), filter panel remounts and draft resets.
+   */
+  const filterPanelKey = useMemo(() => {
+    return [
+      categorySlug,
+      filters.location,
+      filters.range ?? 'null',
+      filters.priceMin ?? 'null',
+      filters.priceMax ?? 'null',
+      filters.ratingMin ?? 'null',
+      filters.searchQuery,
+      filters.sortBy,
+    ].join('|');
   }, [
-    baseRestaurants,
-    filters.priceMax,
+    categorySlug,
+    filters.location,
+    filters.range,
     filters.priceMin,
+    filters.priceMax,
     filters.ratingMin,
     filters.searchQuery,
     filters.sortBy,
-    isSupported,
   ]);
+
+  const committedLocation = useMemo(
+    () => filters.location.trim(),
+    [filters.location]
+  );
+  const hasLocation = committedLocation.length > 0;
+
+  /**
+   * IMPORTANT:
+   * Backend filter `location` currently behaves non-strict (from your Swagger test it returns all).
+   * So for correct UX:
+   * - We DO NOT rely on server to filter by location for /api/resto.
+   * - We fetch base list (with price/rating/range if you want server-side support for those),
+   *   then we apply location filter CLIENT-SIDE using placeMatchesLocation.
+   */
+  const serverParams = useMemo((): GetRestaurantsParams => {
+    const params: GetRestaurantsParams = { page: 1, limit: 50 };
+
+    // keep server-supported filters (these are legitimate params)
+    if (typeof filters.range === 'number' && !Number.isNaN(filters.range)) {
+      params.range = filters.range;
+    }
+    if (typeof filters.priceMin === 'number')
+      params.priceMin = filters.priceMin;
+    if (typeof filters.priceMax === 'number')
+      params.priceMax = filters.priceMax;
+    if (typeof filters.ratingMin === 'number')
+      params.rating = filters.ratingMin;
+
+    // NOTE: do NOT send location because backend isn't strict;
+    // location filtering handled client-side below.
+    // If later backend becomes strict, you can re-enable it safely here.
+
+    return params;
+  }, [filters.range, filters.priceMin, filters.priceMax, filters.ratingMin]);
+
+  const canFetch = isSupported && !isUnsupported;
+  const query = useRestaurantsQuery(serverParams, { enabled: canFetch });
+
+  const restaurantsFromServer = query.data?.restaurants ?? EMPTY_RESTAURANTS;
+
+  /**
+   * Pipeline:
+   * 1) location filter (client strict/loose)
+   * 2) search by name (client)
+   * 3) sort (client)
+   *
+   * No UI changes. No refetch per keystroke (location is committed-only by your panel).
+   */
+  const filteredRestaurants = useMemo(() => {
+    if (!isSupported) return [];
+
+    let items = restaurantsFromServer.slice();
+
+    // 1) Location filter
+    if (hasLocation) {
+      items = items.filter((r) =>
+        placeMatchesLocation(r.place ?? '', committedLocation)
+      );
+    }
+
+    // 2) Search by restaurant name
+    const q = filters.searchQuery.trim().toLowerCase();
+    if (q.length > 0) {
+      items = items.filter((r) => (r.name ?? '').toLowerCase().includes(q));
+    }
+
+    // 3) Sort
+    items.sort((a, b) => compareRestaurants(a, b, filters.sortBy));
+
+    return items;
+  }, [
+    isSupported,
+    restaurantsFromServer,
+    hasLocation,
+    committedLocation,
+    filters.searchQuery,
+    filters.sortBy,
+  ]);
+
+  const pageTitle =
+    categorySlug === 'nearby' ? 'Nearby Restaurants' : 'All Restaurant';
+
+  const closeFilter = () => setIsFilterOpen(false);
+  const openFilter = () => setIsFilterOpen(true);
+
+  // ==== UI BELOW THIS LINE: keep as-is (layout locked) ====
 
   if (isUnsupported || !isSupported) {
     return (
-      <div className='mx-auto w-full max-w-6xl px-4 py-8'>
-        <NotAvailableYet
-          title='Category not available yet'
-          description='Kategori ini belum didukung oleh backend/roadmap saat ini. Jadi jangan pura-pura list kosong itu normal.'
-          primaryCta={{ label: 'Back to Home', href: '/' }}
-          secondaryCta={{ label: 'All Restaurant', href: '/category/all' }}
-        />
-      </div>
-    );
-  }
+      <div className='mx-auto w-full max-w-6xl px-4 py-10'>
+        <div className='rounded-2xl border border-border bg-card p-6 shadow-sm'>
+          <h2 className='text-lg font-semibold text-foreground'>
+            Category not available yet
+          </h2>
+          <p className='mt-2 text-sm text-muted-foreground'>
+            Kategori ini belum didukung oleh backend/roadmap saat ini.
+          </p>
 
-  // ✅ Optional UX: kalau location kosong, jangan "Loading", kasih instruksi
-  if (!canFetch) {
-    return (
-      <div className='mx-auto w-full max-w-6xl px-4 py-8'>
-        <p className='text-sm text-muted-foreground'>
-          Please enter a location to fetch restaurants.
-        </p>
-
-        <div className='mt-6 grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]'>
-          <CategoryFilterPanel
-            location={filters.location}
-            range={filters.range}
-            onChangeLocation={(v) => dispatch(setLocation(v))}
-            onChangeRange={(v) => dispatch(setRange(v))}
-            searchQuery={filters.searchQuery}
-            onChangeSearch={(v) => dispatch(setSearchQuery(v))}
-            sortBy={filters.sortBy}
-            onChangeSort={(v) => dispatch(setSortBy(v))}
-            priceMin={filters.priceMin}
-            priceMax={filters.priceMax}
-            onChangePriceMin={(v) => dispatch(setPriceMin(v))}
-            onChangePriceMax={(v) => dispatch(setPriceMax(v))}
-            ratingMin={filters.ratingMin}
-            onChangeRatingMin={(v) => dispatch(setRatingMin(v))}
-          />
-
-          <div className='min-w-0'>
-            <RestaurantList restaurants={EMPTY_RESTAURANTS} />
+          <div className='mt-4 flex flex-wrap gap-3'>
+            <Link
+              href='/'
+              className='rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+            >
+              Back to Home
+            </Link>
+            <Link
+              href='/category/all'
+              className='rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+            >
+              All Restaurant
+            </Link>
           </div>
         </div>
       </div>
     );
   }
 
-  if (restaurantsQuery.isLoading) {
+  if (query.isLoading) {
     return (
-      <div className='mx-auto w-full max-w-6xl px-4 py-8'>
+      <div className='mx-auto w-full max-w-6xl px-4 py-10'>
         <p className='text-sm text-muted-foreground'>Loading restaurants...</p>
       </div>
     );
   }
 
-  if (restaurantsQuery.isError) {
+  if (query.isError) {
     return (
-      <div className='mx-auto w-full max-w-6xl px-4 py-8'>
-        <p className='text-sm text-red-600'>
-          Error: {restaurantsQuery.error?.message}
+      <div className='mx-auto w-full max-w-6xl px-4 py-10'>
+        <p className='text-sm text-destructive'>
+          Error: {query.error?.message}
         </p>
         <div className='mt-4'>
-          <Link className='text-sm underline' href='/'>
+          <Link className='text-sm underline underline-offset-4' href='/'>
             Back to Home
           </Link>
         </div>
@@ -202,44 +274,187 @@ export default function CategoryClient({ slug }: Props) {
   }
 
   return (
-    <div className='mx-auto w-full max-w-6xl px-4 py-8'>
+    <div className='mx-auto w-full max-w-6xl px-4 py-10'>
       <div className='mb-6 flex items-center justify-between gap-4'>
-        <h1 className='text-2xl font-semibold'>
-          {categorySlug === 'nearby' ? 'Nearby Restaurants' : 'All Restaurant'}
-        </h1>
+        <h1 className='text-2xl font-semibold text-foreground'>{pageTitle}</h1>
 
-        <button
-          type='button'
-          onClick={() => dispatch(resetFilters())}
-          className='rounded-md border px-3 py-2 text-sm'
-        >
-          Reset Filters
-        </button>
+        <div className='flex items-center gap-3'>
+          <button
+            type='button'
+            onClick={openFilter}
+            className='inline-flex items-center justify-center rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 md:hidden'
+            aria-label='Open filters'
+          >
+            Filter
+          </button>
+
+          <button
+            type='button'
+            onClick={() => {
+              dispatch(resetFilters());
+              closeFilter();
+            }}
+            className='rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          >
+            Reset Filters
+          </button>
+        </div>
       </div>
 
       <div className='grid grid-cols-1 gap-6 md:grid-cols-[280px_1fr]'>
-        <CategoryFilterPanel
-          location={filters.location}
-          range={filters.range}
-          onChangeLocation={(v) => dispatch(setLocation(v))}
-          onChangeRange={(v) => dispatch(setRange(v))}
-          searchQuery={filters.searchQuery}
-          onChangeSearch={(v) => dispatch(setSearchQuery(v))}
-          sortBy={filters.sortBy}
-          onChangeSort={(v) => dispatch(setSortBy(v))}
-          priceMin={filters.priceMin}
-          priceMax={filters.priceMax}
-          onChangePriceMin={(v) => dispatch(setPriceMin(v))}
-          onChangePriceMax={(v) => dispatch(setPriceMax(v))}
-          ratingMin={filters.ratingMin}
-          onChangeRatingMin={(v) => dispatch(setRatingMin(v))}
-        />
+        <div className='hidden md:block' key={`desktop-${filterPanelKey}`}>
+          <DraftFilterPanel
+            key={filterPanelKey}
+            filters={filters}
+            onCommit={(payload) => {
+              // commit only when user hits Enter/Apply in panel
+              dispatch(setLocation(payload.location));
+              dispatch(setPriceMin(payload.priceMin));
+              dispatch(setPriceMax(payload.priceMax));
+            }}
+            onChangeRange={(v) => dispatch(setRange(v))}
+            onChangeRating={(v) => dispatch(setRatingMin(v))}
+            onChangeSearch={(v) => dispatch(setSearchQuery(v))}
+            onChangeSort={(v) => dispatch(setSortBy(v))}
+          />
+        </div>
 
         <div className='min-w-0'>
           <RestaurantList restaurants={filteredRestaurants} />
         </div>
       </div>
+
+      <MobileFilterDrawer
+        open={isFilterOpen}
+        title='Filter'
+        onClose={closeFilter}
+      >
+        <div key={`mobile-${filterPanelKey}`}>
+          <DraftFilterPanel
+            key={filterPanelKey}
+            filters={filters}
+            onCommit={(payload) => {
+              dispatch(setLocation(payload.location));
+              dispatch(setPriceMin(payload.priceMin));
+              dispatch(setPriceMax(payload.priceMax));
+              closeFilter();
+            }}
+            onChangeRange={(v) => dispatch(setRange(v))}
+            onChangeRating={(v) => dispatch(setRatingMin(v))}
+            onChangeSearch={(v) => dispatch(setSearchQuery(v))}
+            onChangeSort={(v) => dispatch(setSortBy(v))}
+          />
+        </div>
+      </MobileFilterDrawer>
     </div>
+  );
+}
+
+type DraftCommitPayload = {
+  location: string;
+  priceMin: number | null;
+  priceMax: number | null;
+};
+
+function DraftFilterPanel(props: {
+  filters: RootState['filters'];
+  onCommit: (payload: DraftCommitPayload) => void;
+  onChangeRange: (v: number | null) => void;
+  onChangeRating: (v: number | null) => void;
+  onChangeSearch: (v: string) => void;
+  onChangeSort: (v: SortBy) => void;
+}) {
+  const {
+    filters,
+    onCommit,
+    onChangeRange,
+    onChangeRating,
+    onChangeSearch,
+    onChangeSort,
+  } = props;
+
+  // ✅ draft lives here, not in CategoryClient
+  const [draftLocation, setDraftLocation] = useState(filters.location);
+  const [draftPriceMin, setDraftPriceMin] = useState<number | null>(
+    filters.priceMin
+  );
+  const [draftPriceMax, setDraftPriceMax] = useState<number | null>(
+    filters.priceMax
+  );
+
+  const commitLocation = () => {
+    onCommit({
+      location: draftLocation,
+      priceMin: filters.priceMin ?? null,
+      priceMax: filters.priceMax ?? null,
+    });
+  };
+
+  const commitPrice = () => {
+    const min =
+      typeof draftPriceMin === 'number' && !Number.isNaN(draftPriceMin)
+        ? draftPriceMin
+        : null;
+    const max =
+      typeof draftPriceMax === 'number' && !Number.isNaN(draftPriceMax)
+        ? draftPriceMax
+        : null;
+
+    onCommit({
+      location: filters.location,
+      priceMin: min,
+      priceMax: max,
+    });
+  };
+
+  const commitAll = () => {
+    const min =
+      typeof draftPriceMin === 'number' && !Number.isNaN(draftPriceMin)
+        ? draftPriceMin
+        : null;
+    const max =
+      typeof draftPriceMax === 'number' && !Number.isNaN(draftPriceMax)
+        ? draftPriceMax
+        : null;
+
+    onCommit({
+      location: draftLocation,
+      priceMin: min,
+      priceMax: max,
+    });
+  };
+
+  return (
+    <>
+      <CategoryFilterPanel
+        location={draftLocation}
+        range={filters.range}
+        onChangeLocation={(v) => setDraftLocation(v)}
+        onSubmitLocation={commitLocation}
+        searchQuery={filters.searchQuery}
+        onChangeSearch={onChangeSearch}
+        sortBy={filters.sortBy}
+        onChangeSort={onChangeSort}
+        priceMin={draftPriceMin}
+        priceMax={draftPriceMax}
+        onChangePriceMin={(v) => setDraftPriceMin(v)}
+        onChangePriceMax={(v) => setDraftPriceMax(v)}
+        onSubmitPrice={commitPrice}
+        ratingMin={filters.ratingMin}
+        onChangeRatingMin={onChangeRating}
+        onChangeRange={onChangeRange}
+      />
+
+      <div className='mt-4 space-y-2 md:hidden'>
+        <button
+          type='button'
+          onClick={commitAll}
+          className='w-full rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+        >
+          Apply
+        </button>
+      </div>
+    </>
   );
 }
 
@@ -259,4 +474,50 @@ const compareRestaurants = (
 
   if (sortBy === 'price-asc') return aVal - bVal;
   return bVal - aVal;
+};
+
+type DrawerProps = {
+  open: boolean;
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+};
+
+const MobileFilterDrawer = ({
+  open,
+  title,
+  onClose,
+  children,
+}: DrawerProps) => {
+  if (!open) return null;
+
+  return (
+    <div
+      className='fixed inset-0 z-50 md:hidden'
+      role='dialog'
+      aria-modal='true'
+      aria-label={title}
+    >
+      <button
+        type='button'
+        aria-label='Close filters overlay'
+        onClick={onClose}
+        className='absolute inset-0 bg-foreground/20'
+      />
+      <div className='absolute right-0 top-0 h-full w-[88%] max-w-[360px] overflow-y-auto border-l border-border bg-card p-4 shadow-lg'>
+        <div className='mb-4 flex items-center justify-between gap-3'>
+          <p className='text-base font-semibold text-foreground'>{title}</p>
+          <button
+            type='button'
+            onClick={onClose}
+            className='inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+            aria-label='Close filters'
+          >
+            ✕
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
 };

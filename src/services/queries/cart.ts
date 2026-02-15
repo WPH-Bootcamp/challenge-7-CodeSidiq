@@ -1,14 +1,21 @@
 // src/services/queries/cart.ts
 
-// src/services/queries/cart.ts
-
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  type UseQueryOptions,
+} from '@tanstack/react-query';
 
 import { api } from '@/services/api/axios';
 import type { AddToCartPayload, CartData, GetCartResponse } from '@/types/cart';
 import { isApiSuccess } from '@/types/cart';
 
-const CART_QUERY_KEY = ['cart'] as const;
+export const cartQueryKeys = {
+  all: ['cart'] as const,
+};
+
+const CART_QUERY_KEY = cartQueryKeys.all;
 
 // ---------- helpers (pure) ----------
 const recomputeCart = (cartGroups: CartData['cart']): CartData => {
@@ -76,7 +83,8 @@ const removeItemFromCache = (prev: CartData, itemId: number): CartData => {
   return recomputeCart(nextGroups);
 };
 
-const emptyCart: CartData = recomputeCart([]);
+// ✅ Exported single source of truth for "cart kosong"
+export const EMPTY_CART: CartData = recomputeCart([]);
 
 // ---------- shared react-query helpers ----------
 const invalidateCart = (qc: ReturnType<typeof useQueryClient>) =>
@@ -109,10 +117,16 @@ const fetchCart = async (): Promise<CartData> => {
 };
 
 // ---------- hooks ----------
-export const useCartQuery = () => {
+export const useCartQuery = (
+  options?: Omit<
+    UseQueryOptions<CartData, Error, CartData, typeof CART_QUERY_KEY>,
+    'queryKey' | 'queryFn'
+  >
+) => {
   return useQuery({
     queryKey: CART_QUERY_KEY,
     queryFn: fetchCart,
+    ...options,
   });
 };
 
@@ -210,7 +224,7 @@ export const useClearCartMutation = () => {
       await qc.cancelQueries({ queryKey: CART_QUERY_KEY });
       const previous = qc.getQueryData<CartData>(CART_QUERY_KEY);
 
-      qc.setQueryData<CartData>(CART_QUERY_KEY, emptyCart);
+      qc.setQueryData<CartData>(CART_QUERY_KEY, EMPTY_CART);
 
       return { previous };
     },

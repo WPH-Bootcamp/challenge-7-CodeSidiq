@@ -1,46 +1,22 @@
-// src/components/common/NotAvailableYet.tsx
-import Link from 'next/link';
+'use client';
 
-type Cta = {
-  label: string;
-  href: string;
-};
-
-type Props = {
-  title: string;
-  description: string;
-  primaryCta: Cta;
-  secondaryCta?: Cta;
+type NotAvailableYetProps = {
+  label?: string;
+  description?: string;
 };
 
 export const NotAvailableYet = ({
-  title,
+  label = 'Not available yet',
   description,
-  primaryCta,
-  secondaryCta,
-}: Props) => {
+}: NotAvailableYetProps) => {
   return (
-    <div className='rounded-xl border bg-white p-8'>
-      <h2 className='text-lg font-semibold'>{title}</h2>
-      <p className='mt-2 text-sm text-muted-foreground'>{description}</p>
-
-      <div className='mt-6 flex flex-wrap gap-3'>
-        <Link
-          className='rounded-md border px-4 py-2 text-sm'
-          href={primaryCta.href}
-        >
-          {primaryCta.label}
-        </Link>
-
-        {secondaryCta ? (
-          <Link
-            className='rounded-md border px-4 py-2 text-sm'
-            href={secondaryCta.href}
-          >
-            {secondaryCta.label}
-          </Link>
-        ) : null}
-      </div>
+    <div className='rounded-2xl border bg-card p-6 text-center'>
+      <p className='text-sm font-semibold'>{label}</p>
+      {description ? (
+        <p className='mt-1 text-xs text-muted-foreground'>{description}</p>
+      ) : null}
     </div>
   );
 };
+
+export default NotAvailableYet;

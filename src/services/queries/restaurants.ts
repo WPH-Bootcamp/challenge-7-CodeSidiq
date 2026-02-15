@@ -1,5 +1,9 @@
 // src/services/queries/restaurants.ts
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
+import {
+  useInfiniteQuery,
+  useQuery,
+  type UseQueryOptions,
+} from '@tanstack/react-query';
 import type { AxiosError } from 'axios';
 
 import { api } from '@/services/api/axios';
@@ -30,7 +34,6 @@ export const restaurantQueryKeys = {
       params?.limit ?? 20,
     ] as const,
 
-  // ✅ key khusus infinite (tanpa page supaya stable)
   restaurantsInfinite: (params?: Omit<GetRestaurantsParams, 'page'>) =>
     [
       'restaurants',
@@ -63,6 +66,16 @@ export const restaurantQueryKeys = {
       params.page ?? 1,
       params.limit ?? 20,
     ] as const,
+
+  // ✅ NEW: key khusus infinite search (tanpa page supaya stable)
+  searchInfinite: (params: { q: string; limit?: number }) =>
+    [
+      'restaurants',
+      'search',
+      'infinite',
+      params.q,
+      params.limit ?? 20,
+    ] as const,
 };
 
 const getApiErrorMessage = (error: unknown): string => {
@@ -91,7 +104,6 @@ const assertSuccess = <TData>(
   throw new Error(response.message || 'Request failed');
 };
 
-// ✅ penting: jangan kirim query param kosong yang bikin backend 400
 const sanitizeRestaurantsParams = (
   params?: GetRestaurantsParams
 ): GetRestaurantsParams | undefined => {
@@ -99,7 +111,6 @@ const sanitizeRestaurantsParams = (
 
   const clean: GetRestaurantsParams = { ...params };
 
-  // location: kalau kosong -> hapus
   if (
     typeof clean.location === 'string' &&
     clean.location.trim().length === 0
@@ -107,7 +118,6 @@ const sanitizeRestaurantsParams = (
     delete (clean as Partial<GetRestaurantsParams>).location;
   }
 
-  // category: kalau kosong -> hapus
   if (
     typeof clean.category === 'string' &&
     clean.category.trim().length === 0
@@ -115,12 +125,10 @@ const sanitizeRestaurantsParams = (
     delete (clean as Partial<GetRestaurantsParams>).category;
   }
 
-  // range: kalau bukan number valid -> hapus
   if (typeof clean.range !== 'number' || Number.isNaN(clean.range)) {
     delete (clean as Partial<GetRestaurantsParams>).range;
   }
 
-  // page/limit defaults
   if (!clean.page || clean.page < 1) clean.page = 1;
   if (!clean.limit || clean.limit < 1) clean.limit = 20;
 
@@ -192,14 +200,25 @@ const fetchSearchRestaurants = async (
   }
 };
 
-export const useRestaurantsQuery = (params?: GetRestaurantsParams) => {
+/**
+ * ✅ FIX: accept React Query options (e.g., enabled)
+ * So caller can do:
+ *   useRestaurantsQuery(params, { enabled: condition })
+ */
+export const useRestaurantsQuery = (
+  params?: GetRestaurantsParams,
+  options?: Omit<
+    UseQueryOptions<RestaurantsListData, Error, RestaurantsListData>,
+    'queryKey' | 'queryFn'
+  >
+) => {
   return useQuery({
     queryKey: restaurantQueryKeys.restaurants(params),
     queryFn: () => fetchRestaurants(params),
+    ...options,
   });
 };
 
-// ✅ NEW: Infinite query buat Show More (pagination)
 export const useInfiniteRestaurantsQuery = (
   params?: Omit<GetRestaurantsParams, 'page'>
 ) => {
@@ -249,5 +268,32 @@ export const useSearchRestaurantsQuery = (params: SearchRestaurantsParams) => {
     queryKey: restaurantQueryKeys.search(params),
     queryFn: () => fetchSearchRestaurants(params),
     enabled: params.q.trim().length > 0,
+  });
+};
+
+// ✅ NEW: infinite search untuk tombol "Show More" di halaman /search
+export const useInfiniteSearchRestaurantsQuery = (params: {
+  q: string;
+  limit?: number;
+}) => {
+  const q = params.q.trim();
+  const limit = params.limit ?? 20;
+
+  return useInfiniteQuery({
+    queryKey: restaurantQueryKeys.searchInfinite({ q, limit }),
+    initialPageParam: 1,
+    enabled: q.length > 0,
+    queryFn: ({ pageParam }) =>
+      fetchSearchRestaurants({
+        q,
+        limit,
+        page: Number(pageParam),
+      }),
+    getNextPageParam: (lastPage) => {
+      const current = lastPage.pagination?.page ?? 1;
+      const totalPages = lastPage.pagination?.totalPages ?? 1;
+      if (current < totalPages) return current + 1;
+      return undefined;
+    },
   });
 };

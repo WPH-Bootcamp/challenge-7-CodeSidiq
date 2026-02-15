@@ -11,6 +11,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
 import { authTokenStorage } from '@/services/api/axios';
 import { authQueryKeys, useProfileQuery } from '@/services/queries/auth';
+import { cartQueryKeys, useCartQuery } from '@/services/queries/cart';
 import type { AuthUser } from '@/types/auth';
 
 type HeaderProps = {
@@ -25,6 +26,8 @@ const getInitial = (name: string) => {
   return trimmed.slice(0, 1).toUpperCase();
 };
 
+const SCROLL_Y_THRESHOLD = 12;
+
 const Header = ({ className }: HeaderProps) => {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -33,8 +36,6 @@ const Header = ({ className }: HeaderProps) => {
   const isHome = pathname === '/';
 
   const { data: profileResponse, isError } = useProfileQuery();
-
-  // Swagger wrapper: { success, message, data }
   const user: AuthUser | null = profileResponse?.data ?? null;
 
   const isLoggedIn = useMemo(() => {
@@ -48,27 +49,34 @@ const Header = ({ className }: HeaderProps) => {
   const avatarUrl =
     avatarRaw && isLikelyAbsoluteUrl(avatarRaw) ? avatarRaw : null;
 
-  // UI only (server cart comes later session)
-  const cartCount = isLoggedIn ? 1 : 0;
+  const { data: cartData } = useCartQuery({
+    enabled: isLoggedIn,
+    retry: false,
+  });
+
+  const cartCount = cartData?.summary.totalItems ?? 0;
 
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-  // Refs for click-outside detection
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
 
+  // Scroll state only matters for Home (others always solid)
   useEffect(() => {
     if (!isHome) return;
 
-    const onScroll = () => setIsScrolled(window.scrollY > 12);
+    const onScroll = () => {
+      setIsScrolled(window.scrollY > SCROLL_Y_THRESHOLD);
+    };
 
+    // sync initial state when entering Home
     onScroll();
+
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, [isHome]);
 
-  // Close dropdown on click outside + Escape key
   useEffect(() => {
     if (!isMenuOpen) return;
 
@@ -79,9 +87,7 @@ const Header = ({ className }: HeaderProps) => {
       const root = menuRootRef.current;
       const btn = menuButtonRef.current;
 
-      // If click happens inside dropdown or on the button, ignore
       if (root?.contains(target) || btn?.contains(target)) return;
-
       setIsMenuOpen(false);
     };
 
@@ -100,51 +106,72 @@ const Header = ({ className }: HeaderProps) => {
 
   const handleCloseMenu = () => setIsMenuOpen(false);
 
-  const handleLogout = () => {
-    // MVP logout: clear token + reset auth state cache + redirect
-    authTokenStorage.clear();
-    queryClient.removeQueries({ queryKey: authQueryKeys.profile });
+  const handleLogout = async () => {
     setIsMenuOpen(false);
-    router.push('/auth/login');
+
+    await queryClient.cancelQueries({ queryKey: authQueryKeys.profile });
+    queryClient.setQueryData(authQueryKeys.profile, undefined);
+    queryClient.removeQueries({ queryKey: authQueryKeys.profile });
+
+    await queryClient.cancelQueries({ queryKey: cartQueryKeys.all });
+    queryClient.setQueryData(cartQueryKeys.all, undefined);
+    queryClient.removeQueries({ queryKey: cartQueryKeys.all });
+
+    authTokenStorage.clear();
+    router.replace('/auth/login');
   };
 
-  // Home:
-  // - top: transparent
-  // - scrolled: solid
-  // Other pages: solid
   const headerSolid = !isHome || isScrolled;
+
+  const logoSrc = headerSolid
+    ? '/assets/icons/logo.svg'
+    : '/assets/icons/logo-white.svg';
 
   const bagIconSrc = headerSolid
     ? '/assets/icons/bag.svg'
     : '/assets/icons/bag-white.svg';
 
+  // ✅ fixed always (biar gak ada drama sticky)
+  const headerPosition = 'fixed left-0 top-0';
+
+  // ✅ theme rules:
+  // - Home top: truly transparent (NO blur / NO tint)
+  // - Home scrolled: solid glass
+  // - Non-home: solid glass
+  const headerTheme = headerSolid
+    ? 'bg-card/95 text-card-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80'
+    : 'bg-transparent text-white';
+
+  // only apply drop-shadow to readable elements, not background
+  const readableOnHero = !headerSolid && isHome ? 'drop-shadow-sm' : '';
+
+  const cartBtnClass = cn(
+    'relative inline-flex h-11 w-11 items-center justify-center rounded-full',
+    headerSolid ? 'hover:bg-accent' : 'hover:bg-white/10',
+    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+  );
+
   return (
     <header
-      className={cn(
-        isHome ? 'fixed left-0 top-0 z-50' : 'relative',
-        'w-full',
-        headerSolid
-          ? 'bg-card text-card-foreground shadow-sm'
-          : 'bg-transparent text-white',
-        className
-      )}
+      className={cn('z-60 w-full', headerPosition, headerTheme, className)}
     >
-      {/* lock height to prevent jump */}
       <div className='mx-auto flex h-20 w-full max-w-360 items-center justify-between px-6 lg:px-16 xl:px-30'>
-        {/* Left: Logo */}
-        <Link href='/' className='flex items-center gap-3' aria-label='Foody'>
+        <Link
+          href='/'
+          aria-label='Go to home'
+          className={cn(
+            'inline-flex items-center gap-3',
+            readableOnHero,
+            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+          )}
+        >
           <Image
-            src={
-              headerSolid
-                ? '/assets/icons/logo.svg'
-                : '/assets/icons/logo-white.svg'
-            }
+            src={logoSrc}
             alt='Foody logo'
             width={32}
             height={32}
             priority
           />
-          {/* Home mobile: hide text like design */}
           <span
             className={cn(
               'text-xl font-semibold leading-none',
@@ -155,8 +182,7 @@ const Header = ({ className }: HeaderProps) => {
           </span>
         </Link>
 
-        {/* Right */}
-        <div className='flex items-center gap-3'>
+        <div className={cn('flex items-center gap-3', readableOnHero)}>
           {!isLoggedIn ? (
             <div className='flex items-center gap-2'>
               <Link
@@ -185,15 +211,7 @@ const Header = ({ className }: HeaderProps) => {
             </div>
           ) : (
             <div className='relative flex items-center gap-3' ref={menuRootRef}>
-              <button
-                type='button'
-                aria-label='Cart'
-                className={cn(
-                  'relative inline-flex h-11 w-11 items-center justify-center rounded-full',
-                  headerSolid ? 'hover:bg-accent' : 'hover:bg-white/10',
-                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-                )}
-              >
+              <Link href='/cart' aria-label='Cart' className={cartBtnClass}>
                 <Image
                   src={bagIconSrc}
                   alt=''
@@ -206,82 +224,79 @@ const Header = ({ className }: HeaderProps) => {
                     {cartCount}
                   </span>
                 ) : null}
-              </button>
+              </Link>
 
               <button
                 ref={menuButtonRef}
                 type='button'
                 aria-label='User menu'
-                aria-haspopup='menu'
-                aria-expanded={isMenuOpen}
                 onClick={() => setIsMenuOpen((v) => !v)}
-                className='relative h-11 w-11 overflow-hidden rounded-full bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+                className={cn(
+                  'inline-flex h-11 items-center gap-3 rounded-full px-3',
+                  headerSolid ? 'hover:bg-accent' : 'hover:bg-white/10',
+                  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                )}
               >
                 {avatarUrl ? (
-                  <Image
-                    src={avatarUrl}
-                    alt={`${displayName} avatar`}
-                    fill
-                    sizes='44px'
-                    className='object-cover'
-                  />
+                  <span className='relative h-8 w-8 overflow-hidden rounded-full bg-muted'>
+                    <Image
+                      src={avatarUrl}
+                      alt={`${displayName} avatar`}
+                      fill
+                      className='object-cover'
+                    />
+                  </span>
                 ) : (
-                  <div className='flex h-full w-full items-center justify-center text-sm font-semibold text-muted-foreground'>
+                  <span className='inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground'>
                     {getInitial(displayName)}
-                  </div>
+                  </span>
                 )}
+
+                <span
+                  className={cn(
+                    'max-w-35 truncate text-sm font-medium',
+                    isHome && !headerSolid ? 'text-white' : 'text-foreground',
+                    'hidden sm:inline'
+                  )}
+                >
+                  {displayName}
+                </span>
               </button>
 
-              <span className='hidden text-sm font-medium sm:inline'>
-                {displayName}
-              </span>
-
               {isMenuOpen ? (
-                <div
-                  role='menu'
-                  className='absolute right-0 top-14 w-80 rounded-2xl border bg-card p-5 text-card-foreground shadow-lg'
-                >
-                  {/* ✅ clickable user header → /profile */}
-                  <Link
-                    href='/profile'
-                    onClick={handleCloseMenu}
-                    className='flex items-center gap-3 rounded-xl p-2 transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                    role='menuitem'
-                  >
-                    <div className='relative h-12 w-12 overflow-hidden rounded-full bg-muted'>
-                      {avatarUrl ? (
+                <div className='absolute right-0 top-14 w-70 overflow-hidden rounded-3xl border bg-card text-foreground shadow-lg'>
+                  <div className='flex items-center gap-3 px-5 pt-5'>
+                    {avatarUrl ? (
+                      <span className='relative h-11 w-11 overflow-hidden rounded-full bg-muted'>
                         <Image
                           src={avatarUrl}
-                          alt=''
+                          alt={`${displayName} avatar`}
                           fill
-                          sizes='48px'
                           className='object-cover'
                         />
-                      ) : (
-                        <div className='flex h-full w-full items-center justify-center text-base font-semibold text-muted-foreground'>
-                          {getInitial(displayName)}
-                        </div>
-                      )}
-                    </div>
+                      </span>
+                    ) : (
+                      <span className='inline-flex h-11 w-11 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground'>
+                        {getInitial(displayName)}
+                      </span>
+                    )}
 
-                    <div className='min-w-0'>
-                      <p className='truncate text-lg font-semibold leading-none'>
-                        {displayName}
-                      </p>
-                      <p className='text-sm text-muted-foreground'>
-                        View Profile
-                      </p>
-                    </div>
-                  </Link>
-
-                  <div className='my-4 h-px w-full bg-border' />
-
-                  <nav className='space-y-1 text-sm text-card-foreground'>
                     <Link
                       href='/profile'
                       onClick={handleCloseMenu}
-                      className='flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-muted'
-                      role='menuitem'
+                      className='truncate text-base font-semibold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                    >
+                      {displayName}
+                    </Link>
+                  </div>
+
+                  <div className='mx-5 mt-4 border-t' />
+
+                  <div className='px-3 py-3'>
+                    <Link
+                      href='/profile'
+                      onClick={handleCloseMenu}
+                      className='flex items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                     >
                       <Image
                         src='/assets/icons/marker-pin.svg'
@@ -290,16 +305,13 @@ const Header = ({ className }: HeaderProps) => {
                         width={20}
                         height={20}
                       />
-                      <span className='text-base font-medium'>
-                        Delivery Address
-                      </span>
+                      <span className='font-medium'>Delivery Address</span>
                     </Link>
 
                     <Link
                       href='/orders'
                       onClick={handleCloseMenu}
-                      className='flex items-center gap-3 rounded-xl px-3 py-3 hover:bg-muted'
-                      role='menuitem'
+                      className='flex items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                     >
                       <Image
                         src='/assets/icons/file.svg'
@@ -308,16 +320,13 @@ const Header = ({ className }: HeaderProps) => {
                         width={20}
                         height={20}
                       />
-                      <span className='text-base font-medium'>My Orders</span>
+                      <span className='font-medium'>My Orders</span>
                     </Link>
-
-                    <div className='my-2 h-px w-full bg-border' />
 
                     <button
                       type='button'
                       onClick={handleLogout}
-                      className='flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left hover:bg-muted'
-                      role='menuitem'
+                      className='flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
                     >
                       <Image
                         src='/assets/icons/arrow-circle.svg'
@@ -326,9 +335,9 @@ const Header = ({ className }: HeaderProps) => {
                         width={20}
                         height={20}
                       />
-                      <span className='text-base font-medium'>Logout</span>
+                      <span className='font-medium'>Logout</span>
                     </button>
-                  </nav>
+                  </div>
                 </div>
               ) : null}
             </div>

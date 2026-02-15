@@ -4,21 +4,18 @@ import { createSlice, type PayloadAction } from '@reduxjs/toolkit';
 export type SortBy = 'rating-desc' | 'name-asc' | 'price-asc' | 'price-desc';
 
 export type FiltersState = {
-  // category routing intent
-  categorySlug: string; // e.g. 'all', 'nearby'
+  categorySlug: string;
 
-  // derived client filters
   searchQuery: string;
   sortBy: SortBy;
 
-  // distance server params (location-aware)
-  location: string; // e.g. 'jakarta pusat'
-  range: number; // km
+  // distance (server params)
+  location: string;
+  range: number | null; // ✅ allow empty
 
-  // optional but present in design category page
   priceMin: number | null;
   priceMax: number | null;
-  ratingMin: number | null; // 1..5
+  ratingMin: number | null; // 1..5 or null
 };
 
 const initialState: FiltersState = {
@@ -26,10 +23,9 @@ const initialState: FiltersState = {
   searchQuery: '',
   sortBy: 'rating-desc',
 
-  // Default masuk akal karena backend distance butuh location biar meaningful.
-  // Kalau kamu mau kosongin, bisa, tapi distance UI jadi "nggak guna" sampai user isi.
-  location: 'jakarta pusat',
-  range: 10,
+  // ✅ DEFAULT MUST BE EMPTY (per Figma + UX)
+  location: '',
+  range: null,
 
   priceMin: null,
   priceMax: null,
@@ -53,7 +49,7 @@ const filtersSlice = createSlice({
     setLocation(state, action: PayloadAction<string>) {
       state.location = action.payload;
     },
-    setRange(state, action: PayloadAction<number>) {
+    setRange(state, action: PayloadAction<number | null>) {
       state.range = action.payload;
     },
 
@@ -68,11 +64,13 @@ const filtersSlice = createSlice({
     },
 
     resetFilters(state) {
-      // categorySlug jangan direset otomatis (biar tidak "melawan route")
       state.searchQuery = initialState.searchQuery;
       state.sortBy = initialState.sortBy;
+
+      // ✅ reset must be EMPTY
       state.location = initialState.location;
       state.range = initialState.range;
+
       state.priceMin = initialState.priceMin;
       state.priceMax = initialState.priceMax;
       state.ratingMin = initialState.ratingMin;

@@ -18,10 +18,8 @@ const getInitial = (name: string) => {
 const normalizeLogoUrl = (raw?: string | null) => {
   const value = (raw ?? '').trim();
   if (!value) return null;
-
   if (value.startsWith('/')) return value;
   if (isAbsoluteUrl(value)) return value;
-
   return null;
 };
 
@@ -45,19 +43,6 @@ const RestaurantLogo = ({
     );
   }
 
-  if (isAbsoluteUrl(logoUrl)) {
-    return (
-      <Image
-        src={logoUrl}
-        alt={`${name} logo`}
-        fill
-        sizes='64px'
-        className='object-cover'
-        unoptimized
-      />
-    );
-  }
-
   return (
     <Image
       src={logoUrl}
@@ -65,6 +50,7 @@ const RestaurantLogo = ({
       fill
       sizes='64px'
       className='object-cover'
+      unoptimized={isAbsoluteUrl(logoUrl)}
     />
   );
 };
@@ -72,14 +58,14 @@ const RestaurantLogo = ({
 export const RestaurantList = ({ restaurants }: Props) => {
   if (restaurants.length === 0) {
     return (
-      <div className='rounded-2xl border bg-card p-6 text-sm text-muted-foreground'>
+      <div className='rounded-2xl border border-border bg-card p-6 text-sm text-muted-foreground'>
         No restaurants found.
       </div>
     );
   }
 
   return (
-    <ul className='grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3'>
+    <ul className='grid grid-cols-1 gap-6 sm:grid-cols-2'>
       {restaurants.map((resto) => {
         const logoUrl = normalizeLogoUrl(resto.logo);
         const distanceText = formatDistanceKm(resto.distance);
@@ -88,10 +74,14 @@ export const RestaurantList = ({ restaurants }: Props) => {
           <li key={resto.id}>
             <Link
               href={`/resto/${resto.id}`}
-              className='block rounded-3xl border bg-card p-5 shadow-sm transition hover:shadow-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+              className={[
+                'block rounded-2xl border border-border bg-card p-4 shadow-sm',
+                'transition hover:shadow-md',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+              ].join(' ')}
             >
               <div className='flex items-center gap-4'>
-                <div className='relative h-16 w-16 overflow-hidden rounded-2xl bg-muted'>
+                <div className='relative h-16 w-16 overflow-hidden rounded-xl bg-muted'>
                   <RestaurantLogo name={resto.name} logoUrl={logoUrl} />
                 </div>
 
@@ -109,7 +99,7 @@ export const RestaurantList = ({ restaurants }: Props) => {
                         width={14}
                         height={14}
                       />
-                      <span className='text-xs'>{resto.star}</span>
+                      <span>{resto.star}</span>
                     </span>
 
                     <span className='text-muted-foreground'>·</span>

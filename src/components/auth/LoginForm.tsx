@@ -1,10 +1,11 @@
 'use client';
 
 import { useQueryClient } from '@tanstack/react-query';
+import axios from 'axios';
 import { Eye, EyeOff } from 'lucide-react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useState, type FormEvent } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -16,168 +17,95 @@ import {
   getApiErrorMessage,
   useLoginMutation,
 } from '@/services/queries/auth';
+import type { LoginRequest } from '@/types/auth';
 
 type FieldErrors = Partial<Record<'email' | 'password', string>>;
 
-type LoginFormProps = {
-  email?: string;
-  password?: string;
-  rememberMe?: boolean;
+const normalizeEmail = (value: string) => value.trim().toLowerCase();
 
-  isLoading?: boolean;
-  errors?: FieldErrors;
-
-  onChangeEmail?: (value: string) => void;
-  onChangePassword?: (value: string) => void;
-  onChangeRememberMe?: (value: boolean) => void;
-
-  onSubmit?: (payload: {
-    email: string;
-    password: string;
-    rememberMe: boolean;
-  }) => void;
-};
-
-const DEMO_FILL = {
-  email: 'johndoe@email.com',
-  password: 'johdoe123',
-  rememberMe: true,
-};
-
-const LoginForm = ({
-  email,
-  password,
-  rememberMe,
-  isLoading,
-  errors,
-  onChangeEmail,
-  onChangePassword,
-  onChangeRememberMe,
-  onSubmit,
-}: LoginFormProps) => {
+const LoginForm = () => {
   const router = useRouter();
   const queryClient = useQueryClient();
-
   const loginMutation = useLoginMutation();
 
-  // local state (fallback if parent doesn't control)
-  const [localEmail, setLocalEmail] = useState(email ?? DEMO_FILL.email);
-  const [localPassword, setLocalPassword] = useState(
-    password ?? DEMO_FILL.password
-  );
-  const [localRemember, setLocalRemember] = useState(
-    rememberMe ?? DEMO_FILL.rememberMe
-  );
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(true);
 
   const [showPassword, setShowPassword] = useState(false);
-
-  // Local client-side field errors (used only if parent doesn't pass `errors`)
-  const [localErrors, setLocalErrors] = useState<FieldErrors>({});
-
-  // Server error is separated from client validation errors
+  const [errors, setErrors] = useState<FieldErrors>({});
   const [serverError, setServerError] = useState<string>('');
-
-  const valueEmail = useMemo(
-    () => (email !== undefined ? email : localEmail),
-    [email, localEmail]
-  );
-
-  const valuePassword = useMemo(
-    () => (password !== undefined ? password : localPassword),
-    [password, localPassword]
-  );
-
-  const valueRemember = useMemo(
-    () => (rememberMe !== undefined ? rememberMe : localRemember),
-    [rememberMe, localRemember]
-  );
-
-  // Prioritize parent-provided errors to keep A2.4 behavior compatible
-  const mergedErrors = errors ?? localErrors;
-  const emailError = mergedErrors.email;
-  const passwordError = mergedErrors.password;
 
   const validate = (): FieldErrors => {
     const next: FieldErrors = {};
-    const e = valueEmail.trim();
+    const e = normalizeEmail(email);
 
     if (!e) next.email = 'Email must be filled in.';
-    else if (!/^\S+@\S+\.\S+$/.test(e))
-      next.email = 'Format email tidak valid.';
+    else if (!/^\S+@\S+\.\S+$/.test(e)) next.email = 'Invalid email format.';
 
-    if (!valuePassword) next.password = 'Password must be filled in.';
-    else if (valuePassword.length < 6)
-      next.password = 'Password minimal 6 karakter.';
+    if (!password) next.password = 'Password must be filled in.';
+    else if (password.length < 6) next.password = 'Password min 6 chars.';
 
     return next;
   };
 
-  const runRealLogin = async (payload: {
-    email: string;
-    password: string;
-    rememberMe: boolean;
-  }) => {
+  const runRealLogin = async () => {
     setServerError('');
 
-    const res = await loginMutation.mutateAsync({
-      email: payload.email,
-      password: payload.password,
-    });
+    const payload: LoginRequest = {
+      email: normalizeEmail(email),
+      password,
+    };
 
-    // Swagger token
-    authTokenStorage.set(res.data.token, payload.rememberMe);
+    // ✅ single contract: hook expects { payload, rememberMe }
+    await loginMutation.mutateAsync({ payload, rememberMe });
 
-    // Prime/refetch profile so app knows user is logged in
+    // ✅ token is already stored by the hook. Just verify it exists.
+    const token = authTokenStorage.get();
+    if (!token) {
+      throw new Error('Login succeeded but token is missing in storage.');
+    }
+
+    // prime profile cache so header/avatar updates immediately
     try {
       await queryClient.fetchQuery({
         queryKey: authQueryKeys.profile,
         queryFn: fetchProfile,
       });
     } catch {
-      // Best effort. Login already success, don't block redirect.
+      // best effort
     }
 
     router.replace('/');
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
-    // Client-side validation first
     const nextErrors = validate();
     const hasErrors = Boolean(nextErrors.email || nextErrors.password);
 
     if (hasErrors) {
-      // Only set local errors if parent doesn't control them
-      if (!errors) setLocalErrors(nextErrors);
+      setErrors(nextErrors);
       setServerError('');
       return;
     }
 
-    const payload = {
-      email: valueEmail,
-      password: valuePassword,
-      rememberMe: valueRemember,
-    };
-
-    // If parent wants to handle submit (compat), respect it.
-    if (onSubmit) {
-      onSubmit(payload);
-      return;
-    }
-
     try {
-      await runRealLogin(payload);
+      await runRealLogin();
     } catch (err) {
       setServerError(getApiErrorMessage(err));
+
+      if (axios.isAxiosError(err) && err.response?.status === 401) {
+        authTokenStorage.clear();
+      }
     }
   };
 
-  const loading = Boolean(isLoading) || loginMutation.isPending;
+  const loading = loginMutation.isPending;
 
   return (
     <section className='flex flex-col gap-6'>
-      {/* Header */}
       <header className='flex flex-col gap-3'>
         <div className='flex items-center gap-3'>
           <Image
@@ -200,87 +128,51 @@ const LoginForm = ({
         </div>
       </header>
 
-      {/* Tabs (UI only) */}
-      <div className='rounded-full bg-muted p-1'>
-        <div className='grid grid-cols-2 gap-1'>
-          <button
-            type='button'
-            className='h-10 rounded-full bg-card text-sm font-medium text-foreground shadow-sm'
-            aria-current='page'
-          >
-            Sign in
-          </button>
-
-          <button
-            type='button'
-            onClick={() => router.push('/auth/register')}
-            className='h-10 rounded-full text-sm font-medium text-muted-foreground hover:text-foreground'
-          >
-            Sign up
-          </button>
-        </div>
-      </div>
-
-      {/* Server error (distinct from validation errors) */}
       {serverError ? (
         <div className='rounded-xl border border-destructive/40 bg-destructive/5 px-4 py-3'>
           <p className='text-sm text-destructive'>{serverError}</p>
         </div>
       ) : null}
 
-      {/* Form */}
       <form onSubmit={handleSubmit} className='flex flex-col gap-4'>
-        {/* Email */}
         <div className='space-y-2'>
           <Input
             type='email'
-            value={valueEmail}
+            value={email}
             onChange={(e) => {
-              const v = e.target.value;
-              setLocalEmail(v);
-              onChangeEmail?.(v);
-
-              // when user edits, clear server error and local field error
+              setEmail(e.target.value);
               setServerError('');
-              if (!errors) {
-                setLocalErrors((prev) => ({ ...prev, email: undefined }));
-              }
+              setErrors((prev) => ({ ...prev, email: undefined }));
             }}
             placeholder='Email'
-            aria-invalid={Boolean(emailError)}
+            aria-invalid={Boolean(errors.email)}
             className={[
               'h-12 rounded-xl bg-card',
-              emailError
+              errors.email
                 ? 'border-destructive focus-visible:ring-destructive'
                 : '',
             ].join(' ')}
           />
-          {emailError ? (
-            <p className='text-xs text-destructive'>{emailError}</p>
+          {errors.email ? (
+            <p className='text-xs text-destructive'>{errors.email}</p>
           ) : null}
         </div>
 
-        {/* Password */}
         <div className='space-y-2'>
           <div className='relative'>
             <Input
               type={showPassword ? 'text' : 'password'}
-              value={valuePassword}
+              value={password}
               onChange={(e) => {
-                const v = e.target.value;
-                setLocalPassword(v);
-                onChangePassword?.(v);
-
+                setPassword(e.target.value);
                 setServerError('');
-                if (!errors) {
-                  setLocalErrors((prev) => ({ ...prev, password: undefined }));
-                }
+                setErrors((prev) => ({ ...prev, password: undefined }));
               }}
               placeholder='Password'
-              aria-invalid={Boolean(passwordError)}
+              aria-invalid={Boolean(errors.password)}
               className={[
                 'h-12 rounded-xl bg-card pr-12',
-                passwordError
+                errors.password
                   ? 'border-destructive focus-visible:ring-destructive'
                   : '',
               ].join(' ')}
@@ -300,26 +192,20 @@ const LoginForm = ({
             </button>
           </div>
 
-          {passwordError ? (
-            <p className='text-xs text-destructive'>{passwordError}</p>
+          {errors.password ? (
+            <p className='text-xs text-destructive'>{errors.password}</p>
           ) : null}
         </div>
 
-        {/* Remember Me */}
         <label className='flex cursor-pointer items-center gap-2 text-sm text-muted-foreground'>
           <Checkbox
-            checked={valueRemember}
-            onCheckedChange={(v) => {
-              const next = Boolean(v);
-              setLocalRemember(next);
-              onChangeRememberMe?.(next);
-            }}
+            checked={rememberMe}
+            onCheckedChange={(v) => setRememberMe(Boolean(v))}
             className='h-4 w-4 rounded-sm data-[state=checked]:bg-primary data-[state=checked]:border-primary'
           />
           Remember Me
         </label>
 
-        {/* Submit */}
         <Button
           type='submit'
           disabled={loading}

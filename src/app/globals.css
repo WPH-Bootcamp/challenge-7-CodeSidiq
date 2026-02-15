@@ -39,6 +39,13 @@
 
   --color-destructive: var(--destructive);
 
+  /* ✅ Semantic status tokens (biar gak ada bg-green-600 / bg-amber-500 liar) */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
@@ -88,6 +95,13 @@
   --accent-foreground: var(--neutral-900);
 
   --destructive: #dc2626;
+
+  /* ✅ Semantic status colors (light theme) */
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+
+  --warning: #f59e0b;
+  --warning-foreground: var(--neutral-900);
 
   --border: var(--neutral-200);
   --input: var(--neutral-200);
