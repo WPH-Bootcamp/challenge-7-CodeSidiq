@@ -4,10 +4,14 @@
 
 Challenge 9 – Restaurant Web Frontend (Next.js + TypeScript)
 
+Status: ✅ COMPLETED (MVP + UI Polish + Review Feature)
+
+---
+
 ## Tech Stack (Wajib)
 
 - Next.js (App Router)
-- TypeScript (strict)
+- TypeScript (strict mode enabled)
 - Tailwind CSS
 - shadcn/ui
 - Redux Toolkit (client/UI state only)
@@ -15,21 +19,49 @@ Challenge 9 – Restaurant Web Frontend (Next.js + TypeScript)
 - Axios
 - Day.js
 
+---
+
 ## Backend
 
 - Base URL: https://restaurant-be-400174736012.asia-southeast2.run.app
-- All API requests MUST start with `/api/...` (avoid double `/api`)
+- All API requests start with `/api/...`
+- NO hard-coded API URL
+- Uses `.env.local` with `NEXT_PUBLIC_API_BASE_URL`
 
-## API Scope (Swagger Summary)
+---
 
-### Auth
+## API Scope (Implemented)
+
+### Auth ✅
 
 - POST /api/auth/register
 - POST /api/auth/login
 - GET /api/auth/profile
 - PUT /api/auth/profile
 
-### Cart
+✔ Token stored (localStorage MVP)
+✔ Axios interceptor attaches Authorization header
+✔ Protected endpoints working
+
+---
+
+### Restaurants ✅
+
+- GET /api/resto
+- GET /api/resto/{id}
+- GET /api/resto/recommended
+- GET /api/resto/best-seller
+- GET /api/resto/nearby (if used)
+
+✔ Home listing
+✔ Category listing
+✔ Detail page
+✔ Client-side derived filtering
+✔ Server-side location/range filtering
+
+---
+
+### Cart ✅ (Optimistic UI)
 
 - GET /api/cart
 - POST /api/cart
@@ -37,12 +69,26 @@ Challenge 9 – Restaurant Web Frontend (Next.js + TypeScript)
 - DELETE /api/cart/{id}
 - DELETE /api/cart
 
-### Orders
+✔ React Query authoritative data
+✔ Optimistic update + rollback
+✔ Redux only for UI helpers
+✔ Quantity controls aligned with design
 
-- POST /api/order/checkout (not from cart)
+---
+
+### Checkout & Orders ✅
+
+- POST /api/order/checkout
 - GET /api/order/my-order
 
-### Reviews (OPTIONAL / Post-MVP)
+✔ Adapter: cart → checkout payload
+✔ Payment success page
+✔ Orders history page
+✔ Review button integrated
+
+---
+
+### Reviews (Post-MVP) ✅
 
 - POST /api/review
 - GET /api/review/my-reviews
@@ -50,106 +96,112 @@ Challenge 9 – Restaurant Web Frontend (Next.js + TypeScript)
 - PUT /api/review/{id}
 - DELETE /api/review/{id}
 
-## State Separation Rules
+✔ Review modal (controlled)
+✔ 409 handling
+✔ Delete review supported
+✔ Swagger contract respected
 
-- Server state (React Query):
-  - menus / restaurants
-  - auth profile
-  - cart data
-  - orders
-- Client/UI state (Redux):
-  - filters, sort, search
-  - modal/drawer state
-  - cart UI helpers (optimistic flags, temp qty)
-- Redux MUST NOT store authoritative server data.
+---
 
-## MVP Scope
+## State Separation Rules (Respected)
 
-- Auth (login minimal)
-- Menu list (home)
-- Filter, sort, search (client-side)
-- Cart (server-backed, optimistic UI)
-- Checkout (via `/api/order/checkout`)
-- Order history (via `/api/order/my-order`)
+### Server State (React Query)
 
-## Project Rules
+- Auth profile
+- Restaurants
+- Cart
+- Orders
+- Reviews
 
-- Jangan ubah setup awal project
-- Modifikasi hanya di folder `src/` dan `public/`
-- No hard-coded API URL
-- Mobile-first responsive
-- Accessibility basic (alt, focus, contrast)
+### Client/UI State (Redux)
 
-## Locked Paths (DO NOT CHANGE)
+- Filters (category, range, price, rating, sort)
+- Drawer/modal state
+- Toast positioning
+- Cart UI helpers (pending flags, temp state)
 
-- Redux store: src/lib/store.ts
-- React Query client: src/lib/react-query.ts
-- Axios client: src/services/api/axios.ts
-- Query hooks: src/services/queries/\*
-- Redux slices: src/features/\*
-  - Cart slice: src/features/cart/cartSlice.ts (UI-only, NO API)
-  - Filters slice: src/features/filters/filtersSlice.ts
-- Shared types: src/types/\*
-- Shared utils: src/lib/utils.ts
-- Providers entry (App Router): src/app/providers.tsx
+✔ Redux does NOT store authoritative server data
 
-## Architecture Decisions
+---
 
-- Menus filtering: client-side based on Redux state
-- React Query for ALL server data (no Redux for server data)
-- Redux only for UI/client state
-- API calls only inside services/queries layer
-- Auth token attached via Axios interceptor (detail decided in Auth session)
+## Architecture Decisions (Final)
 
-## Quality Guardrails (Anti Chaos Rules)
+- Filtering: derived client-side (Redux + query data)
+- Location/range: server-side query param
+- React Query for ALL server data
+- Redux strictly UI intent only
+- API layer isolated inside `services/queries`
+- Auth token via Axios interceptor
+- Adapter pattern used for checkout mapping
 
-- Satu sesi = satu fokus fitur
-- Maksimal 3–6 file baru per sesi
-- Page (`app/*/page.tsx`) tidak boleh jadi god component
-- Semua domain types hanya di `src/types/`
-- Semua helper/formatter lewat `src/lib/utils.ts`
-- Import path wajib pakai alias `@/`
-- Jangan campur CSR/SSR tanpa alasan jelas
+---
 
-## Definition of Done (Per Sesi)
+## UI Status
 
-Sebuah sesi dianggap SELESAI jika:
+✔ Mobile-first responsive
+✔ next/image used properly
+✔ Design token system respected (globals.css semantic tokens)
+✔ No random hard-coded colors outside design system
+✔ UI Detail pass (Session D2) completed
+✔ Orders, Checkout, Detail, Profile aligned with Figma
 
-- `npm run dev` jalan tanpa error
-- Tidak melanggar Locked Paths
-- Tidak ada hard-coded API URL
-- State sesuai aturan (Redux vs React Query)
-- Bagian `Current Status` di-update
+---
 
-## Environment Rules (Next.js)
+## Locked Paths (Respected)
 
-- Gunakan `.env.local`
-- Client-side env wajib prefix `NEXT_PUBLIC_`
-- DILARANG pakai `VITE_`
+- src/lib/store.ts
+- src/lib/react-query.ts
+- src/services/api/axios.ts
+- src/services/queries/\*
+- src/features/\*
+- src/types/\*
+- src/lib/utils.ts
+- src/app/providers.tsx
 
-## Git Discipline
+No violations.
 
-- Commit minimal setiap selesai satu sesi
-- Commit message deskriptif (contoh: `session-a: setup providers`)
-- Hindari commit besar tanpa fokus
+---
 
-## Stop Rule (Wajib Dipatuhi)
+## Quality Guardrails (Applied)
 
-Hentikan pengerjaan dan rapikan terlebih dahulu jika:
+- One session = one focus
+- No god components
+- No duplicate domain types
+- Alias `@/` used consistently
+- No CSR/SSR mixing without reason
+- Build passes
+- Dead code cleaned in final pass
 
-- Bingung file mana yang aktif
-- Import path mulai acak
-- State terasa tumpang tindih
-- Page/component mulai terlalu besar
+---
 
-Rapikan struktur → cek dokumen ini → baru lanjut.
+## Definition of Done – FINAL
 
-## Current Status
+Project considered DONE because:
 
-- Project setup: DONE (Session A1)
-- Auth: NOT STARTED
-- Menu list: NOT STARTED
-- Search & filter: NOT STARTED
-- Cart: NOT STARTED
-- Checkout: NOT STARTED
-- Order history: NOT STARTED
+✔ All MVP pages work end-to-end  
+✔ Auth fully functional  
+✔ Cart optimistic UX stable  
+✔ Checkout payload correct  
+✔ Orders history renders correctly  
+✔ Review flow functional  
+✔ No hard-coded API URL  
+✔ Structure follows roadmap document  
+✔ UI visually aligned post D2  
+✔ `npm run build` passes
+
+---
+
+## Final Status
+
+- Setup: DONE
+- Auth: DONE
+- Home Data Flow: DONE
+- Home UI: DONE
+- Category + Filters: DONE
+- Cart: DONE
+- Checkout: DONE
+- Orders: DONE
+- Reviews: DONE
+- Refactor & Polish: DONE
+
+Project Status: ✅ COMPLETED
