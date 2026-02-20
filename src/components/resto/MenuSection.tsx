@@ -137,7 +137,7 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
     router.push('/checkout');
   };
 
-  // Checkout bar hanya muncul kalau ada item (sesuai Figma)
+  // Checkout bar hanya muncul if ada item (sesuai Figma)
   const showCheckoutBar = totalItems > 0;
   const canCheckout = totalItems > 0 && !addToCart.isPending;
 
@@ -146,7 +146,7 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
       {/* Title */}
       <h2 className='text-xl font-semibold tracking-tight md:text-2xl'>Menu</h2>
 
-      {/* Tabs row (dekat title, tidak “ketarik” oleh summary bar) */}
+      {/* Tabs row (dekat title, tidak ketarik oleh summary bar) */}
       <div className='mt-3'>
         <div className='flex flex-wrap items-center gap-2'>
           {types.map((t) => (
@@ -205,7 +205,7 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
                 'disabled:cursor-not-allowed disabled:opacity-60'
               )}
             >
-              {addToCart.isPending ? 'Loading…' : 'Checkout'}
+              {addToCart.isPending ? 'Loading' : 'Checkout'}
             </button>
           </div>
 
@@ -213,7 +213,7 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
           <div className='border-b' />
         </div>
       ) : (
-        // Divider default (kalau bar tidak tampil, tetap ada garis pemisah seperti layout)
+        // Divider default (if bar tidak tampil, tetap ada garis pemisah seperti layout)
         <div className='mt-4 border-b' />
       )}
 
@@ -307,7 +307,7 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
         <ShowMoreButton
           label='Show More'
           onClickAction={() => {
-            // placeholder: kalau nanti ada pagination menu
+            // placeholder: if nanti ada pagination menu
           }}
           disabled
         />

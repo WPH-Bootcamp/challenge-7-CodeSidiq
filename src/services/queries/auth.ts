@@ -56,7 +56,7 @@ export const getApiErrorList = (err: unknown): string[] => {
   return [];
 };
 
-// ✅ backward-compatible helper (dipakai ProfileForm.tsx)
+// Backward-compatible helper (dipakai ProfileForm.tsx)
 export const authQueryHelpers = {
   authQueryKeys,
   getApiErrorMessage,
@@ -81,25 +81,62 @@ const registerApi = async (
   return res.data;
 };
 
+const appendIfString = (fd: FormData, key: string, value: unknown) => {
+  if (typeof value === 'string' && value.trim()) {
+    fd.append(key, value);
+  }
+};
+
+const appendIfFiniteNumber = (fd: FormData, key: string, value: unknown) => {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    fd.append(key, String(value));
+  }
+};
+
+const buildUpdateProfileFormData = (
+  payload: UpdateProfileRequest
+): FormData => {
+  const fd = new FormData();
+
+  appendIfString(fd, 'name', payload.name);
+  appendIfString(fd, 'email', payload.email);
+  appendIfString(fd, 'phone', payload.phone);
+
+  if (payload.avatar instanceof File) {
+    fd.append('avatar', payload.avatar);
+  }
+
+  // coordinates (multipart expects string)
+  appendIfFiniteNumber(fd, 'latitude', payload.latitude);
+  appendIfFiniteNumber(fd, 'longitude', payload.longitude);
+
+  return fd;
+};
+
+const ensureNonEmptyFormData = (fd: FormData) => {
+  // If nothing appended, stop early with consistent message.
+  if ([...fd.keys()].length === 0) {
+    throw new Error(
+      'No fields to update. Please provide name, email, phone, or avatar file.'
+    );
+  }
+};
+
 const updateProfileApi = async (
   payload: UpdateProfileRequest
 ): Promise<UpdateProfileResponse> => {
-  const formData = new FormData();
-
-  if (typeof payload.name === 'string') formData.append('name', payload.name);
-  if (typeof payload.email === 'string')
-    formData.append('email', payload.email);
-  if (typeof payload.phone === 'string')
-    formData.append('phone', payload.phone);
-
-  if (payload.avatar instanceof File) {
-    formData.append('avatar', payload.avatar);
-  }
+  const formData = buildUpdateProfileFormData(payload);
+  ensureNonEmptyFormData(formData);
 
   const res = await api.put<UpdateProfileResponse>(
     '/api/auth/profile',
-    formData
+    formData,
+    {
+      // keep explicit for safety; axios will set boundary properly
+      headers: { 'Content-Type': 'multipart/form-data' },
+    }
   );
+
   return res.data;
 };
 
@@ -201,9 +238,9 @@ export const useLoginMutation = () => {
       return res;
     },
     onSuccess: () => {
-      // ✅ After token set, re-enable profile & refresh server-state that needs auth
+      // After token set, re-enable profile & refresh server-state that needs auth
       qc.invalidateQueries({ queryKey: authQueryKeys.profile });
-      qc.invalidateQueries({ queryKey: CART_QUERY_KEY }); // ✅ FIX: cart refetch
+      qc.invalidateQueries({ queryKey: CART_QUERY_KEY });
     },
   });
 };
@@ -227,7 +264,7 @@ export const useRegisterMutation = () => {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: authQueryKeys.profile });
-      qc.invalidateQueries({ queryKey: CART_QUERY_KEY }); // ✅ FIX: cart refetch
+      qc.invalidateQueries({ queryKey: CART_QUERY_KEY });
     },
   });
 };
@@ -238,12 +275,16 @@ export const useUpdateProfileMutation = () => {
   return useMutation({
     mutationFn: (payload: UpdateProfileRequest) => updateProfileApi(payload),
     onSuccess: (res) => {
+      // 1) Update cache immediately (fast UI)
       qc.setQueryData<ProfileResponse>(authQueryKeys.profile, (prev) => {
         if (!prev || !prev.success) {
           return { success: true, message: res.message, data: res.data };
         }
         return { ...prev, message: res.message, data: res.data };
       });
+
+      // 2) Also invalidate to ensure any dependent UI gets fresh data
+      qc.invalidateQueries({ queryKey: authQueryKeys.profile });
     },
   });
 };

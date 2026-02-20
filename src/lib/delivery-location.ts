@@ -1,0 +1,41 @@
+// src/lib/delivery-location.ts
+import type { DeliveryLocationDraft } from '@/types/location';
+
+export const DELIVERY_LOCATION_KEY = 'foody_delivery_location_v1';
+export const DELIVERY_LOCATION_EVENT = 'foody-delivery-location';
+
+const isObject = (v: unknown): v is Record<string, unknown> =>
+  typeof v === 'object' && v !== null;
+
+export const readDeliveryLocationDraft = (): DeliveryLocationDraft | null => {
+  if (typeof window === 'undefined') return null;
+
+  try {
+    const raw = window.localStorage.getItem(DELIVERY_LOCATION_KEY);
+    if (!raw) return null;
+
+    const parsed: unknown = JSON.parse(raw);
+    if (!isObject(parsed)) return null;
+
+    const formattedAddress = parsed.formattedAddress;
+    const latitude = parsed.latitude;
+    const longitude = parsed.longitude;
+    const updatedAt = parsed.updatedAt;
+
+    if (typeof formattedAddress !== 'string' || formattedAddress.trim() === '')
+      return null;
+    if (typeof latitude !== 'number' || !Number.isFinite(latitude)) return null;
+    if (typeof longitude !== 'number' || !Number.isFinite(longitude))
+      return null;
+    if (typeof updatedAt !== 'string' || updatedAt.trim() === '') return null;
+
+    return {
+      formattedAddress,
+      latitude,
+      longitude,
+      updatedAt,
+    };
+  } catch {
+    return null;
+  }
+};

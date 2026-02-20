@@ -37,13 +37,13 @@ export type RestaurantListItem = {
 
   /**
    * Present in GET /api/resto list, but NOT always present in recommended endpoints.
-   * ✅ Make optional to support schema variance across endpoints.
+   *  Make optional to support schema variance across endpoints.
    */
   menuCount?: number;
 
   /**
    * Present in some endpoints (list/search/best-seller), but NOT returned in recommendations.
-   * ✅ Optional to avoid forcing fake defaults like {min:0,max:0}.
+   *  Optional to avoid forcing fake defaults like {min:0,max:0}.
    */
   priceRange?: PriceRange;
 

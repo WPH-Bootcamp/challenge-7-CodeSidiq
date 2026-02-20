@@ -67,7 +67,7 @@ export const restaurantQueryKeys = {
       params.limit ?? 20,
     ] as const,
 
-  // ✅ NEW: key khusus infinite search (tanpa page supaya stable)
+  //  NEW: key khusus infinite search (tanpa page supaya stable)
   searchInfinite: (params: { q: string; limit?: number }) =>
     [
       'restaurants',
@@ -201,7 +201,7 @@ const fetchSearchRestaurants = async (
 };
 
 /**
- * ✅ FIX: accept React Query options (e.g., enabled)
+ *  FIX: accept React Query options (e.g., enabled)
  * So caller can do:
  *   useRestaurantsQuery(params, { enabled: condition })
  */
@@ -271,7 +271,7 @@ export const useSearchRestaurantsQuery = (params: SearchRestaurantsParams) => {
   });
 };
 
-// ✅ NEW: infinite search untuk tombol "Show More" di halaman /search
+//  NEW: infinite search untuk tombol "Show More" di halaman /search
 export const useInfiniteSearchRestaurantsQuery = (params: {
   q: string;
   limit?: number;

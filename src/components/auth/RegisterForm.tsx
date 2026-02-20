@@ -82,7 +82,7 @@ const RegisterForm = () => {
       password,
     };
 
-    // ✅ contract: hook expects { payload, rememberMe }
+    // Contract: the hook expects { payload, rememberMe }.
     await registerMutation.mutateAsync({ payload, rememberMe: true });
 
     // token may or may not exist depending on backend behavior

@@ -102,11 +102,11 @@ export const RestaurantList = ({ restaurants }: Props) => {
                       <span>{resto.star}</span>
                     </span>
 
-                    <span className='text-muted-foreground'>·</span>
+                    <span className='text-muted-foreground'></span>
 
                     <span className='truncate'>
                       {resto.place}
-                      {distanceText ? ` · ${distanceText}` : ''}
+                      {distanceText ? `  ${distanceText}` : ''}
                     </span>
                   </div>
                 </div>

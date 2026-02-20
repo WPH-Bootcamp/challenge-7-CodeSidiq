@@ -2,14 +2,14 @@
 'use client';
 
 type NewShapeProps = {
-  // ✅ Dipakai oleh HomeClient/MenuSection/ReviewSection/SearchClient (versi yang kamu pakai)
+  //  Dipakai oleh HomeClient/MenuSection/ReviewSection/SearchClient (versi yang kamu pakai)
   canShowMore: boolean;
   isLoadingMore: boolean;
   onClickAction: () => void;
 };
 
 type LegacyShapeProps = {
-  // ✅ Backward compatible, kalau ada pemakaian lama
+  //  Backward compatible, if ada pemakaian lama
   label: string;
   description?: string;
   onClickAction: () => void;
@@ -39,7 +39,7 @@ const ShowMoreButton = (props: ShowMoreButtonProps) => {
       disabled={disabled}
       aria-label={label}
       className={[
-        // ✅ Figma: tombol kecil, centered, pill
+        //  Figma: tombol kecil, centered, pill
         'inline-flex items-center justify-center',
         'rounded-full border bg-card',
         'px-8 py-3 text-sm font-semibold',
@@ -54,6 +54,6 @@ const ShowMoreButton = (props: ShowMoreButtonProps) => {
   );
 };
 
-// ✅ IMPORTANT: export keduanya, supaya semua import gaya lama tetap jalan.
+//  IMPORTANT: export keduanya, supaya semua import gaya lama tetap jalan.
 export { ShowMoreButton };
 export default ShowMoreButton;

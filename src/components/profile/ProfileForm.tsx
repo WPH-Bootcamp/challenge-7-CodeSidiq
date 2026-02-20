@@ -165,7 +165,7 @@ export function ProfileForm({ user, onCancelAction, onSuccessAction }: Props) {
       onError: (err) => {
         const msg = authQueryHelpers.getApiErrorMessage(err);
         const list = authQueryHelpers.getApiErrorList(err);
-        const combined = list.length ? `${msg}: ${list.join(' • ')}` : msg;
+        const combined = list.length ? `${msg}: ${list.join('  ')}` : msg;
 
         setFormError(combined);
       },

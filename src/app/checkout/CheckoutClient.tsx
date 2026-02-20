@@ -7,6 +7,13 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useMemo, useState } from 'react';
 import { z } from 'zod';
 
+import { Toast } from '@/components/common/Toast';
+import { ToastViewport } from '@/components/common/ToastViewport';
+import {
+  QTY_ICON_ADD,
+  QTY_ICON_MINUS,
+  QTY_ICON_SIZE,
+} from '@/components/icons/qty';
 import { cn } from '@/lib/utils';
 import {
   mapCartToCheckoutPayload,
@@ -22,10 +29,6 @@ import {
   ordersQueryHelpers,
   useCheckoutMutation,
 } from '@/services/queries/orders';
-
-// ✅ adjust these imports if your toast component path/name differs
-import { Toast } from '@/components/common/Toast';
-import { ToastViewport } from '@/components/common/ToastViewport';
 
 const paymentOptions = [
   {
@@ -62,24 +65,6 @@ const formSchema = z.object({
 
 type FieldErrors = Partial<Record<keyof CheckoutFormValues, string>>;
 
-const moneyIdr = (value: number) =>
-  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(
-    value
-  );
-
-// Figma desktop content width: 1000px
-const PAGE_CONTAINER = 'mx-auto w-full max-w-[1000px]';
-
-// Quantity icons (from public/assets/icons/)
-const QTY_ICON_ADD = '/assets/icons/add.svg';
-const QTY_ICON_MINUS = '/assets/icons/minus.svg';
-
-// Toast icon (warning/danger)
-const TOAST_ICON_DANGER = '/assets/icons/danger.svg';
-
-// Single control point to resize the +/- icons
-const ICON_SIZE = 24;
-
 type ToastState =
   | {
       open: true;
@@ -91,6 +76,37 @@ type ToastState =
       title?: string;
       message?: string;
     };
+
+type DeliveryLocationDraft = {
+  formattedAddress: string;
+  latitude: number;
+  longitude: number;
+  updatedAt: string; // ISO
+};
+
+const moneyIdr = (value: number) =>
+  new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR' }).format(
+    value
+  );
+
+// Figma desktop content width: 1000px
+const PAGE_CONTAINER = 'mx-auto w-full max-w-[1000px]';
+
+// Toast icon (danger)
+const TOAST_ICON_DANGER = '/assets/icons/danger.svg';
+
+// D3.c: delivery location draft (client-side only)
+const DELIVERY_LOCATION_KEY = 'foody_delivery_location_v1';
+const DELIVERY_LOCATION_EVENT = 'foody-delivery-location';
+
+const safeParseJson = <T,>(raw: string | null): T | null => {
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+};
 
 const CheckoutClient = () => {
   const router = useRouter();
@@ -128,8 +144,12 @@ const CheckoutClient = () => {
   // Item action reveal (Remove hidden until row clicked)
   const [activeItemId, setActiveItemId] = useState<number | null>(null);
 
-  // ✅ Toast (component-based)
+  // Toast (component-based)
   const [toast, setToast] = useState<ToastState>({ open: false });
+
+  // D3.c: keep a copy for UI hints (optional)
+  const [deliveryDraft, setDeliveryDraft] =
+    useState<DeliveryLocationDraft | null>(null);
 
   const closeToast = () => setToast({ open: false });
 
@@ -216,10 +236,8 @@ const CheckoutClient = () => {
       return;
     }
 
-    // ✅ If required fields are missing and inputs are hidden, reveal + toast
     if (ensureAddressInputsVisible()) return;
 
-    // ✅ Validate with schema
     if (!validate()) {
       showDangerToast(
         'Please fix the form errors before checkout.',
@@ -251,6 +269,37 @@ const CheckoutClient = () => {
       return { ...prev, phone: profile.phone };
     });
   }, [profile?.phone]);
+
+  // D3.c: Prefill address from delivery draft (hydration-safe)
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const readDraft = () => {
+      const raw = window.localStorage.getItem(DELIVERY_LOCATION_KEY);
+      return safeParseJson<DeliveryLocationDraft>(raw);
+    };
+
+    const syncDraft = () => {
+      const draft = readDraft();
+      setDeliveryDraft(draft);
+
+      // Only prefill if user hasn't typed a valid address yet
+      setValues((prev) => {
+        if (!draft) return prev;
+        if (prev.deliveryAddress.trim().length >= 10) return prev;
+
+        return {
+          ...prev,
+          deliveryAddress: draft.formattedAddress,
+        };
+      });
+    };
+
+    syncDraft();
+    window.addEventListener(DELIVERY_LOCATION_EVENT, syncDraft);
+
+    return () => window.removeEventListener(DELIVERY_LOCATION_EVENT, syncDraft);
+  }, []);
 
   // Change/Save button behavior for address
   const handleToggleAddressEdit = () => {
@@ -328,7 +377,6 @@ const CheckoutClient = () => {
 
   return (
     <main className='w-full bg-muted/30 px-6 pb-16 pt-10 lg:px-16'>
-      {/* ✅ Toast (component) */}
       <ToastViewport>
         <Toast
           open={toast.open}
@@ -364,6 +412,12 @@ const CheckoutClient = () => {
                     </span>
                   </div>
 
+                  {deliveryDraft && !displayAddress ? (
+                    <p className='mt-2 text-xs text-muted-foreground'>
+                      Detected location is ready. Tap Change to review/edit.
+                    </p>
+                  ) : null}
+
                   <div className='mt-3 space-y-2 text-sm text-muted-foreground'>
                     {!isEditingAddress ? (
                       <>
@@ -383,7 +437,6 @@ const CheckoutClient = () => {
                           </p>
                         )}
 
-                        {/* show errors even when not editing */}
                         {errors.deliveryAddress ? (
                           <p className='text-xs text-destructive'>
                             {errors.deliveryAddress}
@@ -471,7 +524,6 @@ const CheckoutClient = () => {
                   <div className='space-y-5'>
                     {cartData?.cart.map((group) => (
                       <div key={group.restaurant.id} className='space-y-3'>
-                        {/* Restaurant header */}
                         <div className='flex items-center justify-between'>
                           <div className='flex items-center gap-2'>
                             <Image
@@ -570,14 +622,14 @@ const CheckoutClient = () => {
                                     aria-label='Decrease quantity'
                                   >
                                     {isUpdatingThis ? (
-                                      '…'
+                                      ''
                                     ) : (
                                       <Image
                                         src={QTY_ICON_MINUS}
                                         alt=''
                                         aria-hidden='true'
-                                        width={ICON_SIZE}
-                                        height={ICON_SIZE}
+                                        width={QTY_ICON_SIZE}
+                                        height={QTY_ICON_SIZE}
                                       />
                                     )}
                                   </button>
@@ -600,19 +652,18 @@ const CheckoutClient = () => {
                                     aria-label='Increase quantity'
                                   >
                                     {isUpdatingThis ? (
-                                      '…'
+                                      ''
                                     ) : (
                                       <Image
                                         src={QTY_ICON_ADD}
                                         alt=''
                                         aria-hidden='true'
-                                        width={ICON_SIZE}
-                                        height={ICON_SIZE}
+                                        width={QTY_ICON_SIZE}
+                                        height={QTY_ICON_SIZE}
                                       />
                                     )}
                                   </button>
 
-                                  {/* Remove: hidden by default, reveal on row click */}
                                   <button
                                     type='button'
                                     className={cn(

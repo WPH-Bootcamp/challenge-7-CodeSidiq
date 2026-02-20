@@ -1,3 +1,4 @@
+// src/app/orders/OrdersClient.tsx
 'use client';
 
 import Image from 'next/image';
@@ -5,10 +6,13 @@ import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
 import OrdersSidebar from '@/components/orders/OrdersSidebar';
+import ReviewModal from '@/components/orders/ReviewModal';
 import { cn } from '@/lib/utils';
 import { useProfileQuery } from '@/services/queries/auth';
 import { useOrdersQuery } from '@/services/queries/orders';
+import { useMyReviewsQuery } from '@/services/queries/reviews';
 import type { TransactionStatus } from '@/types/order';
+import type { MyReviewItem } from '@/types/review';
 
 const ICONS = {
   search: '/assets/icons/search.svg',
@@ -37,7 +41,14 @@ const normalizeText = (input: string) =>
 
 type ReviewModalState =
   | { open: false }
-  | { open: true; transactionId: string; restaurantName: string };
+  | {
+      open: true;
+      transactionId: string;
+      restaurantName: string;
+      restaurantId: number;
+      menuIds: number[];
+      existingReview: MyReviewItem | null;
+    };
 
 const OrdersClient = () => {
   const [status, setStatus] = useState<StatusTabValue>('done');
@@ -50,7 +61,7 @@ const OrdersClient = () => {
   const page = 1;
   const limit = 5;
 
-  // ✅ Single source of truth untuk user name + avatar (biar match Header)
+  // Single source of truth for user name + avatar (to match the Header).
   const { data: profileResponse } = useProfileQuery();
   const user = profileResponse?.data ?? null;
 
@@ -63,6 +74,23 @@ const OrdersClient = () => {
     limit,
   });
 
+  // Reviews (needed for Edit mode & 409 avoidance)
+  const myReviewsPage = 1;
+  const myReviewsLimit = 50; // enough for matching current list
+  const { data: myReviewsRes } = useMyReviewsQuery(
+    { page: myReviewsPage, limit: myReviewsLimit },
+    {
+      enabled: typeof window !== 'undefined', // token gating handled by axios/auth in practice
+    }
+  );
+
+  const reviewByTransactionId = useMemo(() => {
+    const list = myReviewsRes?.data.reviews ?? [];
+    const map = new Map<string, MyReviewItem>();
+    for (const r of list) map.set(r.transactionId, r);
+    return map;
+  }, [myReviewsRes]);
+
   const normalized = useMemo(() => {
     const orders = data?.data.orders ?? [];
 
@@ -72,6 +100,8 @@ const OrdersClient = () => {
 
       const restaurantName = firstGroup?.restaurant.name ?? 'Restaurant';
       const restaurantLogo = firstGroup?.restaurant.logo;
+      const restaurantId = firstGroup?.restaurant.id ?? 0;
+
       const itemName = firstItem?.menuName ?? 'Menu';
       const qty = firstItem?.quantity ?? 0;
       const price = firstItem?.price ?? 0;
@@ -80,21 +110,31 @@ const OrdersClient = () => {
       const thumb = firstItem?.image || restaurantLogo || '';
 
       const qtyText =
-        qty && price ? `${qty} × ${moneyIdr(price)}` : qty ? `${qty} item` : '';
+        qty && price ? `${qty}  ${moneyIdr(price)}` : qty ? `${qty} item` : '';
+
+      const menuIdsRaw = (firstGroup?.items ?? []).map((i) => i.menuId);
+      const menuIds = Array.from(new Set(menuIdsRaw)).filter(
+        (x) => typeof x === 'number' && Number.isFinite(x)
+      );
+
+      const transactionId = tx.transactionId;
 
       return {
         id: tx.id,
-        transactionId: tx.transactionId,
+        transactionId,
         status: tx.status as TransactionStatus,
         restaurantName,
         restaurantLogo,
+        restaurantId,
+        menuIds,
         thumb,
         itemName,
         qtyText,
         total: tx.pricing?.totalPrice ?? 0,
+        existingReview: reviewByTransactionId.get(transactionId) ?? null,
       };
     });
-  }, [data]);
+  }, [data, reviewByTransactionId]);
 
   const filtered = useMemo(() => {
     const q = normalizeText(search);
@@ -114,8 +154,14 @@ const OrdersClient = () => {
       normalizeText('access token required')
     );
 
-  const openReviewModal = (transactionId: string, restaurantName: string) => {
-    setReviewModal({ open: true, transactionId, restaurantName });
+  const openReviewModal = (args: {
+    transactionId: string;
+    restaurantName: string;
+    restaurantId: number;
+    menuIds: number[];
+    existingReview: MyReviewItem | null;
+  }) => {
+    setReviewModal({ open: true, ...args });
   };
 
   const closeReviewModal = () => setReviewModal({ open: false });
@@ -208,136 +254,115 @@ const OrdersClient = () => {
                   No orders found.
                 </p>
               ) : (
-                filtered.map((o) => (
-                  <article
-                    key={o.transactionId}
-                    className='rounded-2xl border bg-background px-4 py-4 sm:px-5 sm:py-4'
-                  >
-                    {/* Top: restaurant */}
-                    <div className='flex items-center gap-3'>
-                      <div className='relative h-9 w-9 overflow-hidden rounded-xl bg-muted'>
-                        {o.restaurantLogo ? (
-                          <Image
-                            src={o.restaurantLogo}
-                            alt={o.restaurantName}
-                            fill
-                            sizes='36px'
-                            className='object-cover'
-                          />
-                        ) : null}
-                      </div>
+                filtered.map((o) => {
+                  const isEdit = Boolean(o.existingReview?.id);
 
-                      <div className='min-w-0'>
-                        <div className='truncate text-sm font-semibold'>
-                          {o.restaurantName}
+                  return (
+                    <article
+                      key={o.transactionId}
+                      className='rounded-2xl border bg-background px-4 py-4 sm:px-5 sm:py-4'
+                    >
+                      {/* Top: restaurant */}
+                      <div className='flex items-center gap-3'>
+                        <div className='relative h-9 w-9 overflow-hidden rounded-xl bg-muted'>
+                          {o.restaurantLogo ? (
+                            <Image
+                              src={o.restaurantLogo}
+                              alt={o.restaurantName}
+                              fill
+                              sizes='36px'
+                              className='object-cover'
+                            />
+                          ) : null}
                         </div>
-                      </div>
-                    </div>
 
-                    {/* Middle: item */}
-                    <div className='mt-3 flex items-center gap-4'>
-                      <div className='relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-muted'>
-                        {o.thumb ? (
-                          <Image
-                            src={o.thumb}
-                            alt={o.itemName}
-                            fill
-                            sizes='56px'
-                            className='object-cover'
-                          />
-                        ) : null}
-                      </div>
-
-                      <div className='min-w-0'>
-                        <div className='truncate text-sm font-medium'>
-                          {o.itemName}
-                        </div>
-                        <div className='mt-1 text-sm font-semibold'>
-                          {o.qtyText || ''}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Divider */}
-                    <div className='mt-3 h-px w-full bg-border' />
-
-                    {/* Bottom */}
-                    <div className='mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
-                      <div>
-                        <div className='text-xs text-muted-foreground'>
-                          Total
-                        </div>
-                        <div className='text-sm font-semibold'>
-                          {moneyIdr(o.total)}
+                        <div className='min-w-0'>
+                          <div className='truncate text-sm font-semibold'>
+                            {o.restaurantName}
+                          </div>
                         </div>
                       </div>
 
-                      <button
-                        type='button'
-                        onClick={() =>
-                          openReviewModal(o.transactionId, o.restaurantName)
-                        }
-                        className={cn(
-                          'h-11 rounded-full bg-primary px-8 text-sm font-semibold text-primary-foreground',
-                          'hover:opacity-90 active:opacity-95',
-                          'w-full sm:w-auto',
-                          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-                        )}
-                      >
-                        Give Review
-                      </button>
-                    </div>
-                  </article>
-                ))
+                      {/* Middle: item */}
+                      <div className='mt-3 flex items-center gap-4'>
+                        <div className='relative h-14 w-14 shrink-0 overflow-hidden rounded-xl bg-muted'>
+                          {o.thumb ? (
+                            <Image
+                              src={o.thumb}
+                              alt={o.itemName}
+                              fill
+                              sizes='56px'
+                              className='object-cover'
+                            />
+                          ) : null}
+                        </div>
+
+                        <div className='min-w-0'>
+                          <div className='truncate text-sm font-medium'>
+                            {o.itemName}
+                          </div>
+                          <div className='mt-1 text-sm font-semibold'>
+                            {o.qtyText || ''}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Divider */}
+                      <div className='mt-3 h-px w-full bg-border' />
+
+                      {/* Bottom */}
+                      <div className='mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between'>
+                        <div>
+                          <div className='text-xs text-muted-foreground'>
+                            Total
+                          </div>
+                          <div className='text-sm font-semibold'>
+                            {moneyIdr(o.total)}
+                          </div>
+                        </div>
+
+                        <button
+                          type='button'
+                          onClick={() =>
+                            openReviewModal({
+                              transactionId: o.transactionId,
+                              restaurantName: o.restaurantName,
+                              restaurantId: o.restaurantId,
+                              menuIds: o.menuIds,
+                              existingReview: o.existingReview,
+                            })
+                          }
+                          className={cn(
+                            'h-11 rounded-full bg-primary px-8 text-sm font-semibold text-primary-foreground',
+                            'hover:opacity-90 active:opacity-95',
+                            'w-full sm:w-auto',
+                            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                          )}
+                        >
+                          {isEdit ? 'Edit Review' : 'Give Review'}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })
               )}
             </div>
           </div>
         </section>
       </div>
 
-      {/* UI-only modal: proves click works (no backend, no new endpoint) */}
+      {/* Modal (key ensures clean initial state without effect reset) */}
       {reviewModal.open ? (
-        <div
-          className='fixed inset-0 z-[80] grid place-items-center bg-black/40 px-4'
-          role='dialog'
-          aria-modal='true'
-          aria-label='Review modal'
-          onClick={closeReviewModal}
-        >
-          <div
-            className='w-full max-w-[420px] rounded-2xl bg-card p-5 shadow-lg'
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className='text-base font-semibold'>Review</div>
-            <p className='mt-2 text-sm text-muted-foreground'>
-              Review feature coming soon.
-            </p>
-
-            <div className='mt-4 rounded-xl border bg-background p-3'>
-              <div className='text-xs text-muted-foreground'>
-                Transaction ID
-              </div>
-              <div className='mt-1 break-all text-sm font-semibold'>
-                {reviewModal.transactionId}
-              </div>
-
-              <div className='mt-3 text-xs text-muted-foreground'>
-                Restaurant
-              </div>
-              <div className='mt-1 text-sm font-semibold'>
-                {reviewModal.restaurantName}
-              </div>
-            </div>
-
-            <button
-              type='button'
-              onClick={closeReviewModal}
-              className='mt-5 h-11 w-full rounded-full border bg-background text-sm font-semibold hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-            >
-              Close
-            </button>
-          </div>
-        </div>
+        <ReviewModal
+          key={`${reviewModal.transactionId}-${reviewModal.existingReview?.id ?? 'new'}`}
+          open={reviewModal.open}
+          onClose={closeReviewModal}
+          transactionId={reviewModal.transactionId}
+          restaurantId={reviewModal.restaurantId}
+          restaurantName={reviewModal.restaurantName}
+          menuIds={reviewModal.menuIds}
+          existingReview={reviewModal.existingReview}
+        />
       ) : null}
     </main>
   );

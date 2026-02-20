@@ -1,14 +1,24 @@
+// src/components/account/OrdersSidebar.tsx
 'use client';
 
 import Image from 'next/image';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
+import { useCallback, useMemo } from 'react';
 
+import { useQueryClient } from '@tanstack/react-query';
+
+import {
+  AccountSidebarNav,
+  type AccountSidebarNavItem,
+} from '@/components/account/AccountSidebarNav';
+import { MarkerPinIcon } from '@/components/icons/MarkerPinIcon';
 import { cn } from '@/lib/utils';
 import { authTokenStorage } from '@/services/api/axios';
+import { authQueryKeys } from '@/services/queries/auth';
+import { cartQueryKeys } from '@/services/queries/cart';
 
 const ICONS = {
-  markerPin: '/assets/icons/marker-pin.svg',
+  myOrders: '/assets/icons/file.svg',
   myOrdersActive: '/assets/icons/file-red.svg',
   logout: '/assets/icons/arrow-circle.svg',
 } as const;
@@ -26,12 +36,15 @@ const getInitial = (name: string) => {
   return trimmed.slice(0, 1).toUpperCase();
 };
 
+const FOCUS_DELIVERY_PROFILE_HREF = '/profile?focus=delivery';
+
 const OrdersSidebar = ({
   userName = 'Guest',
   avatarUrl,
 }: OrdersSidebarProps) => {
   const pathname = usePathname();
   const router = useRouter();
+  const queryClient = useQueryClient();
 
   const isOrders = pathname === '/orders';
 
@@ -40,15 +53,73 @@ const OrdersSidebar = ({
       ? avatarUrl
       : null;
 
-  const handleLogout = () => {
+  const handleLogout = useCallback(async () => {
+    // Match ProfileSidebar behavior: clear caches + token, then redirect.
+    await queryClient.cancelQueries({ queryKey: authQueryKeys.profile });
+    queryClient.setQueryData(authQueryKeys.profile, undefined);
+    queryClient.removeQueries({ queryKey: authQueryKeys.profile });
+
+    await queryClient.cancelQueries({ queryKey: cartQueryKeys.all });
+    queryClient.setQueryData(cartQueryKeys.all, undefined);
+    queryClient.removeQueries({ queryKey: cartQueryKeys.all });
+
     authTokenStorage.clear();
-    router.push('/auth/login');
-  };
+    router.replace('/auth/login');
+  }, [queryClient, router]);
+
+  const items = useMemo<AccountSidebarNavItem[]>(() => {
+    const ordersIconSrc = isOrders ? ICONS.myOrdersActive : ICONS.myOrders;
+
+    return [
+      {
+        key: 'delivery',
+        label: 'Delivery Address',
+        href: FOCUS_DELIVERY_PROFILE_HREF,
+        icon: (
+          <MarkerPinIcon
+            className={cn('h-[18px] w-[18px]', 'text-foreground')}
+            aria-hidden
+          />
+        ),
+      },
+      {
+        key: 'orders',
+        label: 'My Orders',
+        href: '/orders',
+        isActive: isOrders,
+        icon: (
+          <Image
+            src={ordersIconSrc}
+            alt=''
+            width={18}
+            height={18}
+            aria-hidden='true'
+          />
+        ),
+      },
+      {
+        key: 'logout',
+        label: 'Logout',
+        onClick: () => {
+          void handleLogout();
+        },
+        icon: (
+          <Image
+            src={ICONS.logout}
+            alt=''
+            width={18}
+            height={18}
+            aria-hidden='true'
+          />
+        ),
+      },
+    ];
+  }, [handleLogout, isOrders]);
 
   return (
     <aside className='w-full max-w-[260px]'>
-      <div className='rounded-2xl border bg-card p-4 shadow-sm'>
-        {/* Avatar card */}
+      <div className='rounded-2xl border border-border bg-card p-4 shadow-sm'>
+        {/* Avatar */}
         <div className='flex items-center gap-3'>
           <div className='relative h-10 w-10 overflow-hidden rounded-full bg-muted'>
             {safeAvatar ? (
@@ -71,45 +142,8 @@ const OrdersSidebar = ({
           </div>
         </div>
 
-        {/* Menu */}
-        <nav className='mt-4 space-y-1'>
-          <Link
-            href='/profile'
-            className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors',
-              'hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-            )}
-          >
-            <Image src={ICONS.markerPin} alt='' width={18} height={18} />
-            <span>Delivery Address</span>
-          </Link>
-
-          <Link
-            href='/orders'
-            className={cn(
-              'flex items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors',
-              isOrders
-                ? 'font-semibold text-primary'
-                : 'text-foreground hover:bg-muted',
-              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-            )}
-          >
-            <Image src={ICONS.myOrdersActive} alt='' width={18} height={18} />
-            <span>My Orders</span>
-          </Link>
-
-          <button
-            type='button'
-            onClick={handleLogout}
-            className={cn(
-              'flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm transition-colors',
-              'hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
-            )}
-          >
-            <Image src={ICONS.logout} alt='' width={18} height={18} />
-            <span>Logout</span>
-          </button>
-        </nav>
+        {/* Menu (shared) */}
+        <AccountSidebarNav items={items} />
       </div>
     </aside>
   );

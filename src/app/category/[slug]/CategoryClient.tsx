@@ -1,6 +1,6 @@
+// src/app/category/[slug]/CategoryClient.tsx
 'use client';
 
-// src/app/category/[slug]/CategoryClient.tsx
 import Link from 'next/link';
 import React, { useEffect, useMemo, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
@@ -15,7 +15,6 @@ import type {
 import {
   resetFilters,
   setCategorySlug,
-  setLocation,
   setPriceMax,
   setPriceMin,
   setRange,
@@ -45,51 +44,6 @@ type Props = {
   slug: string;
 };
 
-/**
- * Normalize for location compare:
- * - trim
- * - lowercase
- * - collapse multiple spaces
- */
-const normalizeText = (v: string) =>
-  v.trim().toLowerCase().replace(/\s+/g, ' ');
-
-/**
- * Location matching rules (UX-driven):
- * - If user types 1 token (e.g. "jakarta"): loose match -> place includes token
- * - If user types 2+ tokens (e.g. "jakarta pusat"):
- *    - Prefer exact phrase includes ("jakarta pusat")
- *    - Otherwise require ALL meaningful tokens to exist in place
- *
- * This prevents "jakarta pusat" from matching "jakarta selatan/timur/barat".
- */
-const placeMatchesLocation = (placeRaw: string, locationRaw: string) => {
-  const place = normalizeText(placeRaw);
-  const loc = normalizeText(locationRaw);
-
-  if (!place || !loc) return false;
-
-  // Direct phrase match wins
-  if (place.includes(loc)) return true;
-
-  const tokens = loc.split(' ').filter(Boolean);
-
-  // Single word: loose match
-  if (tokens.length === 1) {
-    const t = tokens[0];
-    // optional tiny guard: ignore very short token
-    if (t.length < 2) return false;
-    return place.includes(t);
-  }
-
-  // Multi-word: require ALL meaningful tokens (>= 3 chars) to exist.
-  // If user types "jakarta pusat" -> must include "jakarta" AND "pusat"
-  const meaningful = tokens.filter((t) => t.length >= 3);
-  if (meaningful.length === 0) return false;
-
-  return meaningful.every((t) => place.includes(t));
-};
-
 export default function CategoryClient({ slug }: Props) {
   const dispatch = useDispatch<AppDispatch>();
   const filters = useSelector((s: RootState) => s.filters);
@@ -108,13 +62,12 @@ export default function CategoryClient({ slug }: Props) {
   }, [categorySlug, dispatch]);
 
   /**
-   * ✅ Keyed remount for filter panel (avoid setState in effect)
-   * When committed Redux values change (especially reset), filter panel remounts and draft resets.
+   *  Keyed remount for filter panel draft state.
+   * When committed Redux values change (especially reset), panel remounts and draft resets.
    */
   const filterPanelKey = useMemo(() => {
     return [
       categorySlug,
-      filters.location,
       filters.range ?? 'null',
       filters.priceMin ?? 'null',
       filters.priceMax ?? 'null',
@@ -124,7 +77,6 @@ export default function CategoryClient({ slug }: Props) {
     ].join('|');
   }, [
     categorySlug,
-    filters.location,
     filters.range,
     filters.priceMin,
     filters.priceMax,
@@ -133,27 +85,14 @@ export default function CategoryClient({ slug }: Props) {
     filters.sortBy,
   ]);
 
-  const committedLocation = useMemo(
-    () => filters.location.trim(),
-    [filters.location]
-  );
-  const hasLocation = committedLocation.length > 0;
-
   /**
-   * IMPORTANT:
-   * Backend filter `location` currently behaves non-strict (from your Swagger test it returns all).
-   * So for correct UX:
-   * - We DO NOT rely on server to filter by location for /api/resto.
-   * - We fetch base list (with price/rating/range if you want server-side support for those),
-   *   then we apply location filter CLIENT-SIDE using placeMatchesLocation.
+   * Server params (Swagger-aligned)
+   * - Distance is UI-only: DO NOT send `range` (and no `location` exists in Figma).
+   * - Keep server-supported filters: priceMin/priceMax/rating/category/page/limit.
    */
   const serverParams = useMemo((): GetRestaurantsParams => {
     const params: GetRestaurantsParams = { page: 1, limit: 50 };
 
-    // keep server-supported filters (these are legitimate params)
-    if (typeof filters.range === 'number' && !Number.isNaN(filters.range)) {
-      params.range = filters.range;
-    }
     if (typeof filters.priceMin === 'number')
       params.priceMin = filters.priceMin;
     if (typeof filters.priceMax === 'number')
@@ -161,12 +100,12 @@ export default function CategoryClient({ slug }: Props) {
     if (typeof filters.ratingMin === 'number')
       params.rating = filters.ratingMin;
 
-    // NOTE: do NOT send location because backend isn't strict;
-    // location filtering handled client-side below.
-    // If later backend becomes strict, you can re-enable it safely here.
+    // Optional: if backend supports category filter; depends on your API/slug mapping.
+    // Keeping it OFF by default to avoid assumptions.
+    // if (categorySlug !== 'all' && categorySlug !== 'nearby') params.category = categorySlug;
 
     return params;
-  }, [filters.range, filters.priceMin, filters.priceMax, filters.ratingMin]);
+  }, [filters.priceMin, filters.priceMax, filters.ratingMin]);
 
   const canFetch = isSupported && !isUnsupported;
   const query = useRestaurantsQuery(serverParams, { enabled: canFetch });
@@ -175,42 +114,27 @@ export default function CategoryClient({ slug }: Props) {
 
   /**
    * Pipeline:
-   * 1) location filter (client strict/loose)
-   * 2) search by name (client)
-   * 3) sort (client)
+   * 1) search by name (client)
+   * 2) sort (client)
    *
-   * No UI changes. No refetch per keystroke (location is committed-only by your panel).
+   * Distance is UI-only and does NOT affect results.
    */
   const filteredRestaurants = useMemo(() => {
     if (!isSupported) return [];
 
     let items = restaurantsFromServer.slice();
 
-    // 1) Location filter
-    if (hasLocation) {
-      items = items.filter((r) =>
-        placeMatchesLocation(r.place ?? '', committedLocation)
-      );
-    }
-
-    // 2) Search by restaurant name
+    // 1) Search by restaurant name
     const q = filters.searchQuery.trim().toLowerCase();
     if (q.length > 0) {
       items = items.filter((r) => (r.name ?? '').toLowerCase().includes(q));
     }
 
-    // 3) Sort
+    // 2) Sort
     items.sort((a, b) => compareRestaurants(a, b, filters.sortBy));
 
     return items;
-  }, [
-    isSupported,
-    restaurantsFromServer,
-    hasLocation,
-    committedLocation,
-    filters.searchQuery,
-    filters.sortBy,
-  ]);
+  }, [isSupported, restaurantsFromServer, filters.searchQuery, filters.sortBy]);
 
   const pageTitle =
     categorySlug === 'nearby' ? 'Nearby Restaurants' : 'All Restaurant';
@@ -308,7 +232,6 @@ export default function CategoryClient({ slug }: Props) {
             filters={filters}
             onCommit={(payload) => {
               // commit only when user hits Enter/Apply in panel
-              dispatch(setLocation(payload.location));
               dispatch(setPriceMin(payload.priceMin));
               dispatch(setPriceMax(payload.priceMax));
             }}
@@ -334,7 +257,6 @@ export default function CategoryClient({ slug }: Props) {
             key={filterPanelKey}
             filters={filters}
             onCommit={(payload) => {
-              dispatch(setLocation(payload.location));
               dispatch(setPriceMin(payload.priceMin));
               dispatch(setPriceMax(payload.priceMax));
               closeFilter();
@@ -351,7 +273,6 @@ export default function CategoryClient({ slug }: Props) {
 }
 
 type DraftCommitPayload = {
-  location: string;
   priceMin: number | null;
   priceMax: number | null;
 };
@@ -373,22 +294,13 @@ function DraftFilterPanel(props: {
     onChangeSort,
   } = props;
 
-  // ✅ draft lives here, not in CategoryClient
-  const [draftLocation, setDraftLocation] = useState(filters.location);
+  //  draft lives here, not in CategoryClient
   const [draftPriceMin, setDraftPriceMin] = useState<number | null>(
     filters.priceMin
   );
   const [draftPriceMax, setDraftPriceMax] = useState<number | null>(
     filters.priceMax
   );
-
-  const commitLocation = () => {
-    onCommit({
-      location: draftLocation,
-      priceMin: filters.priceMin ?? null,
-      priceMax: filters.priceMax ?? null,
-    });
-  };
 
   const commitPrice = () => {
     const min =
@@ -400,11 +312,7 @@ function DraftFilterPanel(props: {
         ? draftPriceMax
         : null;
 
-    onCommit({
-      location: filters.location,
-      priceMin: min,
-      priceMax: max,
-    });
+    onCommit({ priceMin: min, priceMax: max });
   };
 
   const commitAll = () => {
@@ -417,20 +325,14 @@ function DraftFilterPanel(props: {
         ? draftPriceMax
         : null;
 
-    onCommit({
-      location: draftLocation,
-      priceMin: min,
-      priceMax: max,
-    });
+    onCommit({ priceMin: min, priceMax: max });
   };
 
   return (
     <>
       <CategoryFilterPanel
-        location={draftLocation}
         range={filters.range}
-        onChangeLocation={(v) => setDraftLocation(v)}
-        onSubmitLocation={commitLocation}
+        onChangeRange={onChangeRange}
         searchQuery={filters.searchQuery}
         onChangeSearch={onChangeSearch}
         sortBy={filters.sortBy}
@@ -442,7 +344,6 @@ function DraftFilterPanel(props: {
         onSubmitPrice={commitPrice}
         ratingMin={filters.ratingMin}
         onChangeRatingMin={onChangeRating}
-        onChangeRange={onChangeRange}
       />
 
       <div className='mt-4 space-y-2 md:hidden'>
@@ -513,7 +414,7 @@ const MobileFilterDrawer = ({
             className='inline-flex h-10 w-10 items-center justify-center rounded-md border border-border bg-background text-sm text-foreground hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
             aria-label='Close filters'
           >
-            ✕
+            
           </button>
         </div>
         {children}

@@ -59,6 +59,10 @@ export type UpdateProfileRequest = {
   email?: string;
   phone?: string;
   avatar?: File | null;
+
+  //allow saving user coordinates
+  latitude?: number;
+  longitude?: number;
 };
 
 export type UpdateProfileResponse = ApiSuccessResponse<AuthUser>;

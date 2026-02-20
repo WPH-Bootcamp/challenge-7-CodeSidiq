@@ -57,10 +57,10 @@ const LoginForm = () => {
       password,
     };
 
-    // ✅ single contract: hook expects { payload, rememberMe }
+    //  single contract: hook expects { payload, rememberMe }
     await loginMutation.mutateAsync({ payload, rememberMe });
 
-    // ✅ token is already stored by the hook. Just verify it exists.
+    //  token is already stored by the hook. Just verify it exists.
     const token = authTokenStorage.get();
     if (!token) {
       throw new Error('Login succeeded but token is missing in storage.');
@@ -123,7 +123,7 @@ const LoginForm = () => {
             Welcome Back
           </h1>
           <p className='text-sm text-muted-foreground'>
-            Good to see you again! Let’s eat
+            Good to see you again! Lets eat
           </p>
         </div>
       </header>

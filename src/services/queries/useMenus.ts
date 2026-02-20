@@ -36,7 +36,7 @@ const normalizeError = (err: unknown): ApiError => {
     if (!axiosErr.response) {
       return {
         message:
-          'Network error: gagal terhubung ke server. Cek internet/VPN/proxy.',
+          'Network error: gagal terhubung ke server. check internet/VPN/proxy.',
       };
     }
 

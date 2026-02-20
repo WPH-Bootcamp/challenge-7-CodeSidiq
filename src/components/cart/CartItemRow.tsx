@@ -1,5 +1,10 @@
 import Image from 'next/image';
 
+import {
+  QTY_ICON_ADD,
+  QTY_ICON_MINUS,
+  QTY_ICON_SIZE,
+} from '@/components/icons/qty';
 import { cn, formatCurrencyIDR } from '@/lib/utils';
 import type { CartItem } from '@/types/cart';
 
@@ -17,6 +22,11 @@ type CartItemRowProps = {
   isUpdating?: boolean;
   isDeleting?: boolean;
 };
+
+const QTY_BTN_BASE =
+  'inline-flex h-9 w-9 items-center justify-center rounded-full';
+const QTY_BTN_FOCUS =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2';
 
 const CartItemRow = ({
   item,
@@ -60,7 +70,7 @@ const CartItemRow = ({
         </p>
       </div>
 
-      {/* Qty control (compact like Figma) */}
+      {/* Qty control (match Checkout icon + sizing) */}
       <div className='flex flex-none items-center gap-2'>
         <button
           type='button'
@@ -70,17 +80,27 @@ const CartItemRow = ({
           }}
           disabled={disabled || !canDecrease}
           className={cn(
-            'inline-flex h-8 w-8 items-center justify-center rounded-full border bg-card text-sm font-semibold',
-            'hover:bg-muted disabled:opacity-60',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+            QTY_BTN_BASE,
+            'border bg-card hover:bg-muted disabled:opacity-60',
+            QTY_BTN_FOCUS
           )}
           aria-label='Decrease quantity'
           title='Decrease'
         >
-          {isUpdating ? '…' : '-'}
+          {isUpdating ? (
+            ''
+          ) : (
+            <Image
+              src={QTY_ICON_MINUS}
+              alt=''
+              aria-hidden='true'
+              width={QTY_ICON_SIZE}
+              height={QTY_ICON_SIZE}
+            />
+          )}
         </button>
 
-        <span className='w-6 text-center text-sm font-semibold'>
+        <span className='min-w-6 text-center text-sm font-semibold'>
           {item.quantity}
         </span>
 
@@ -92,14 +112,24 @@ const CartItemRow = ({
           }}
           disabled={disabled}
           className={cn(
-            'inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-primary-foreground text-sm font-semibold',
-            'hover:opacity-90 disabled:opacity-60',
-            'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+            QTY_BTN_BASE,
+            'bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-60',
+            QTY_BTN_FOCUS
           )}
           aria-label='Increase quantity'
           title='Increase'
         >
-          {isUpdating ? '…' : '+'}
+          {isUpdating ? (
+            ''
+          ) : (
+            <Image
+              src={QTY_ICON_ADD}
+              alt=''
+              aria-hidden='true'
+              width={QTY_ICON_SIZE}
+              height={QTY_ICON_SIZE}
+            />
+          )}
         </button>
       </div>
 
@@ -119,7 +149,7 @@ const CartItemRow = ({
         className={cn(
           'ml-1 inline-flex h-8 w-8 items-center justify-center rounded-full border bg-card text-muted-foreground',
           'hover:text-destructive hover:border-destructive/30 hover:bg-destructive/5',
-          'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2',
+          QTY_BTN_FOCUS,
           // default hidden, revealed when active or focus-within
           isActive ? 'opacity-100' : 'opacity-0',
           'transition-opacity'
@@ -128,7 +158,7 @@ const CartItemRow = ({
         title={isDeleting ? 'Removing...' : 'Remove'}
       >
         {isDeleting ? (
-          <span className='text-xs font-semibold'>…</span>
+          <span className='text-xs font-semibold'></span>
         ) : (
           <svg
             width='16'

@@ -14,7 +14,7 @@ export default function DebugPage() {
 
         <li>
           <Link href='/category/all' target='_blank' rel='noopener noreferrer'>
-            Category – All
+            Category  All
           </Link>
         </li>
 
@@ -24,7 +24,7 @@ export default function DebugPage() {
             target='_blank'
             rel='noopener noreferrer'
           >
-            Category – Nearby
+            Category  Nearby
           </Link>
         </li>
 

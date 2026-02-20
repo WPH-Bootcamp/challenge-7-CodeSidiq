@@ -1,10 +1,11 @@
 'use client';
 
-import Image from 'next/image';
 import { useMemo, useState } from 'react';
 
 import { ShowMoreButton } from '@/components/common/ShowMoreButton';
+import ReviewStarIcon from '@/components/icons/ReviewStarIcon';
 import { Card } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import type { RestaurantDetail } from '@/types/restaurant';
 
 type Props = {
@@ -21,26 +22,26 @@ const formatDate = (iso: string) => {
   }).format(d);
 };
 
+const STAR_SIZE_CLASS = 'h-[18px] w-[18px]';
+const STAR_ROW_CLASS = 'flex items-center gap-1';
+
 // UI helper (presentation only)
 const Stars = ({ value }: { value: number }) => {
   const safeValue = Math.max(0, Math.min(5, value));
 
   return (
-    <div
-      className='flex items-center gap-1'
-      aria-label={`Rating ${safeValue} out of 5`}
-    >
+    <div className={STAR_ROW_CLASS} aria-label={`Rating ${safeValue} out of 5`}>
       {Array.from({ length: 5 }).map((_, i) => {
         const active = i < safeValue;
+
         return (
-          <Image
+          <ReviewStarIcon
             key={i}
-            src='/assets/icons/star.svg'
-            alt=''
             aria-hidden='true'
-            width={14}
-            height={14}
-            className={active ? 'opacity-100' : 'opacity-30'}
+            className={cn(
+              STAR_SIZE_CLASS,
+              active ? 'text-star' : 'text-muted-foreground'
+            )}
           />
         );
       })}
@@ -91,19 +92,14 @@ export const ReviewSection = ({ restaurant }: Props) => {
 
         <div className='flex items-center gap-2 text-sm text-muted-foreground'>
           <div className='flex items-center gap-1'>
-            <Image
-              src='/assets/icons/star.svg'
-              alt=''
+            <ReviewStarIcon
               aria-hidden='true'
-              width={16}
-              height={16}
+              className={cn(STAR_SIZE_CLASS, 'text-star')}
             />
             <span className='font-semibold text-foreground'>{rating}</span>
           </div>
           <span>({totalLabel} Ulasan)</span>
         </div>
-
-        {/* NOTE: Debug paragraph dihapus (bukan bagian Figma / UI production) */}
       </div>
 
       {/* Body */}
@@ -119,12 +115,13 @@ export const ReviewSection = ({ restaurant }: Props) => {
               <div className='flex items-start gap-4'>
                 {/* Avatar */}
                 <div className='relative h-10 w-10 shrink-0 overflow-hidden rounded-full border bg-white'>
-                  <Image
+                  {/* Keep as-is; not part of D3.e */}
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
                     src={review.user.avatar || '/assets/icons/avatar.svg'}
                     alt={`${review.user.name} avatar`}
-                    fill
-                    className='object-cover'
-                    sizes='40px'
+                    className='h-full w-full object-cover'
+                    loading='lazy'
                   />
                 </div>
 

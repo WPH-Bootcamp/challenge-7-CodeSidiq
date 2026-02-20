@@ -9,9 +9,14 @@ export type FiltersState = {
   searchQuery: string;
   sortBy: SortBy;
 
-  // distance (server params)
-  location: string;
-  range: number | null; // ✅ allow empty
+  /**
+   * NOTE:
+   * - Figma Category filter panel has NO location input.
+   * - Distance on Category is UI-only, stored here as `range`.
+   * - `location` is kept for future use (avoid ripple), but Category page must NOT use it.
+   */
+  location: string; // kept for future feature
+  range: number | null; // UI-only distance selection
 
   priceMin: number | null;
   priceMax: number | null;
@@ -23,7 +28,6 @@ const initialState: FiltersState = {
   searchQuery: '',
   sortBy: 'rating-desc',
 
-  // ✅ DEFAULT MUST BE EMPTY (per Figma + UX)
   location: '',
   range: null,
 
@@ -46,6 +50,7 @@ const filtersSlice = createSlice({
       state.sortBy = action.payload;
     },
 
+    // kept for future feature (Category must NOT use it)
     setLocation(state, action: PayloadAction<string>) {
       state.location = action.payload;
     },
@@ -67,7 +72,6 @@ const filtersSlice = createSlice({
       state.searchQuery = initialState.searchQuery;
       state.sortBy = initialState.sortBy;
 
-      // ✅ reset must be EMPTY
       state.location = initialState.location;
       state.range = initialState.range;
 

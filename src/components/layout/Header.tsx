@@ -14,6 +14,16 @@ import { authQueryKeys, useProfileQuery } from '@/services/queries/auth';
 import { cartQueryKeys, useCartQuery } from '@/services/queries/cart';
 import type { AuthUser } from '@/types/auth';
 
+import { AccountMenuContent } from '@/components/layout/AccountMenuContent';
+import { LocationModal } from '@/components/profile/LocationModal';
+import {
+  Sheet,
+  SheetClose,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from '@/components/ui/sheet';
+
 type HeaderProps = {
   className?: string;
 };
@@ -27,6 +37,8 @@ const getInitial = (name: string) => {
 };
 
 const SCROLL_Y_THRESHOLD = 12;
+// Tailwind md breakpoint = 768px
+const MD_MIN_WIDTH_PX = 768;
 
 const Header = ({ className }: HeaderProps) => {
   const router = useRouter();
@@ -57,7 +69,15 @@ const Header = ({ className }: HeaderProps) => {
   const cartCount = cartData?.summary.totalItems ?? 0;
 
   const [isScrolled, setIsScrolled] = useState(false);
+
+  // Desktop dropdown (existing behavior)
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+
+  // Mobile sheet (new behavior)
+  const [isMobileSheetOpen, setIsMobileSheetOpen] = useState(false);
+
+  //  Hoisted modal state (so it doesn't die when Sheet unmounts)
+  const [isLocationOpen, setIsLocationOpen] = useState(false);
 
   const menuRootRef = useRef<HTMLDivElement | null>(null);
   const menuButtonRef = useRef<HTMLButtonElement | null>(null);
@@ -77,6 +97,35 @@ const Header = ({ className }: HeaderProps) => {
     return () => window.removeEventListener('scroll', onScroll);
   }, [isHome]);
 
+  //  Breakpoint sync guard:
+  // - when going to mobile: close desktop dropdown
+  // - when going to desktop: close mobile sheet
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const mql = window.matchMedia(`(min-width: ${MD_MIN_WIDTH_PX}px)`);
+
+    const sync = () => {
+      const isDesktop = mql.matches;
+      if (isDesktop) {
+        setIsMobileSheetOpen(false);
+      } else {
+        setIsMenuOpen(false);
+      }
+    };
+
+    sync();
+
+    if (typeof mql.addEventListener === 'function') {
+      mql.addEventListener('change', sync);
+      return () => mql.removeEventListener('change', sync);
+    }
+
+    mql.addListener(sync);
+    return () => mql.removeListener(sync);
+  }, []);
+
+  // Desktop dropdown: click outside + escape close
   useEffect(() => {
     if (!isMenuOpen) return;
 
@@ -104,10 +153,26 @@ const Header = ({ className }: HeaderProps) => {
     };
   }, [isMenuOpen]);
 
-  const handleCloseMenu = () => setIsMenuOpen(false);
+  const handleCloseDesktopMenu = () => setIsMenuOpen(false);
+  const handleCloseMobileSheet = () => setIsMobileSheetOpen(false);
+
+  const handleOpenDeliveryModal = () => {
+    // close whichever menu is open, then open modal on next frame
+    setIsMenuOpen(false);
+    setIsMobileSheetOpen(false);
+
+    requestAnimationFrame(() => {
+      setIsLocationOpen(true);
+    });
+  };
+
+  const handleCloseDeliveryModal = () => setIsLocationOpen(false);
 
   const handleLogout = async () => {
+    // close all UI layers, just in case
     setIsMenuOpen(false);
+    setIsMobileSheetOpen(false);
+    setIsLocationOpen(false);
 
     await queryClient.cancelQueries({ queryKey: authQueryKeys.profile });
     queryClient.setQueryData(authQueryKeys.profile, undefined);
@@ -131,18 +196,13 @@ const Header = ({ className }: HeaderProps) => {
     ? '/assets/icons/bag.svg'
     : '/assets/icons/bag-white.svg';
 
-  // ✅ fixed always (biar gak ada drama sticky)
+  //  fixed always
   const headerPosition = 'fixed left-0 top-0';
 
-  // ✅ theme rules:
-  // - Home top: truly transparent (NO blur / NO tint)
-  // - Home scrolled: solid glass
-  // - Non-home: solid glass
   const headerTheme = headerSolid
     ? 'bg-card/95 text-card-foreground shadow-sm backdrop-blur supports-[backdrop-filter]:bg-card/80'
     : 'bg-transparent text-white';
 
-  // only apply drop-shadow to readable elements, not background
   const readableOnHero = !headerSolid && isHome ? 'drop-shadow-sm' : '';
 
   const cartBtnClass = cn(
@@ -155,6 +215,9 @@ const Header = ({ className }: HeaderProps) => {
     <header
       className={cn('z-60 w-full', headerPosition, headerTheme, className)}
     >
+      {/*  Global modal at Header-level (NOT inside dropdown/sheet content) */}
+      <LocationModal open={isLocationOpen} onClose={handleCloseDeliveryModal} />
+
       <div className='mx-auto flex h-20 w-full max-w-360 items-center justify-between px-6 lg:px-16 xl:px-30'>
         <Link
           href='/'
@@ -226,13 +289,130 @@ const Header = ({ className }: HeaderProps) => {
                 ) : null}
               </Link>
 
+              {/* =========================
+                  MOBILE (<= md): Full-screen Sheet
+                  ========================= */}
+              <div className='md:hidden'>
+                <Sheet
+                  open={isMobileSheetOpen}
+                  onOpenChange={setIsMobileSheetOpen}
+                >
+                  <SheetTrigger asChild>
+                    <button
+                      type='button'
+                      aria-label='User menu'
+                      className={cn(
+                        'inline-flex h-11 items-center gap-3 rounded-full px-3',
+                        headerSolid ? 'hover:bg-accent' : 'hover:bg-white/10',
+                        'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
+                      )}
+                    >
+                      {avatarUrl ? (
+                        <span className='relative h-8 w-8 overflow-hidden rounded-full bg-muted'>
+                          <Image
+                            src={avatarUrl}
+                            alt={`${displayName} avatar`}
+                            fill
+                            className='object-cover'
+                          />
+                        </span>
+                      ) : (
+                        <span className='inline-flex h-8 w-8 items-center justify-center rounded-full bg-muted text-xs font-semibold text-foreground'>
+                          {getInitial(displayName)}
+                        </span>
+                      )}
+                    </button>
+                  </SheetTrigger>
+
+                  <SheetContent
+                    side='right'
+                    className={cn(
+                      'h-dvh w-screen max-w-none p-0',
+                      'bg-background text-foreground'
+                    )}
+                    aria-label='Mobile user menu'
+                  >
+                    <SheetTitle className='sr-only'>User menu</SheetTitle>
+
+                    <div className='flex h-full w-full flex-col'>
+                      <div className='flex items-center justify-between border-b border-border p-4'>
+                        <div className='flex min-w-0 items-center gap-3'>
+                          {avatarUrl ? (
+                            <span className='relative h-11 w-11 overflow-hidden rounded-full bg-muted'>
+                              <Image
+                                src={avatarUrl}
+                                alt={`${displayName} avatar`}
+                                fill
+                                className='object-cover'
+                              />
+                            </span>
+                          ) : (
+                            <span className='inline-flex h-11 w-11 items-center justify-center rounded-full bg-muted text-sm font-semibold text-foreground'>
+                              {getInitial(displayName)}
+                            </span>
+                          )}
+
+                          <div className='min-w-0'>
+                            <Link
+                              href='/profile'
+                              onClick={handleCloseMobileSheet}
+                              className={cn(
+                                'block truncate text-base font-semibold text-foreground hover:opacity-90',
+                                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+                              )}
+                            >
+                              {displayName}
+                            </Link>
+                            <p className='truncate text-xs text-muted-foreground'>
+                              Account
+                            </p>
+                          </div>
+                        </div>
+
+                        <SheetClose asChild>
+                          <button
+                            type='button'
+                            aria-label='Close menu'
+                            className={cn(
+                              'inline-flex h-11 w-11 items-center justify-center rounded-full',
+                              'hover:bg-muted transition-colors',
+                              'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background'
+                            )}
+                          >
+                            <Image
+                              src='/assets/icons/x-close.svg'
+                              alt=''
+                              aria-hidden='true'
+                              width={20}
+                              height={20}
+                            />
+                          </button>
+                        </SheetClose>
+                      </div>
+
+                      <div className='flex-1 overflow-y-auto'>
+                        <AccountMenuContent
+                          onNavigate={handleCloseMobileSheet}
+                          onLogout={handleLogout}
+                          deliveryMode='modal'
+                          onOpenDeliveryModal={handleOpenDeliveryModal}
+                        />
+                      </div>
+                    </div>
+                  </SheetContent>
+                </Sheet>
+              </div>
+
+              {/* =========================
+                  DESKTOP (>= md): Keep dropdown custom behavior
+                  ========================= */}
               <button
                 ref={menuButtonRef}
                 type='button'
                 aria-label='User menu'
                 onClick={() => setIsMenuOpen((v) => !v)}
                 className={cn(
-                  'inline-flex h-11 items-center gap-3 rounded-full px-3',
+                  'hidden md:inline-flex h-11 items-center gap-3 rounded-full px-3',
                   headerSolid ? 'hover:bg-accent' : 'hover:bg-white/10',
                   'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
                 )}
@@ -255,16 +435,16 @@ const Header = ({ className }: HeaderProps) => {
                 <span
                   className={cn(
                     'max-w-35 truncate text-sm font-medium',
-                    isHome && !headerSolid ? 'text-white' : 'text-foreground',
-                    'hidden sm:inline'
+                    isHome && !headerSolid ? 'text-white' : 'text-foreground'
                   )}
                 >
                   {displayName}
                 </span>
               </button>
 
+              {/*  Desktop dropdown panel must NEVER appear on mobile */}
               {isMenuOpen ? (
-                <div className='absolute right-0 top-14 w-70 overflow-hidden rounded-3xl border bg-card text-foreground shadow-lg'>
+                <div className='hidden md:block absolute right-0 top-14 w-70 overflow-hidden rounded-3xl border bg-card text-foreground shadow-lg'>
                   <div className='flex items-center gap-3 px-5 pt-5'>
                     {avatarUrl ? (
                       <span className='relative h-11 w-11 overflow-hidden rounded-full bg-muted'>
@@ -283,7 +463,7 @@ const Header = ({ className }: HeaderProps) => {
 
                     <Link
                       href='/profile'
-                      onClick={handleCloseMenu}
+                      onClick={handleCloseDesktopMenu}
                       className='truncate text-base font-semibold hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2'
                     >
                       {displayName}
@@ -292,52 +472,11 @@ const Header = ({ className }: HeaderProps) => {
 
                   <div className='mx-5 mt-4 border-t' />
 
-                  <div className='px-3 py-3'>
-                    <Link
-                      href='/profile'
-                      onClick={handleCloseMenu}
-                      className='flex items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                    >
-                      <Image
-                        src='/assets/icons/marker-pin.svg'
-                        alt=''
-                        aria-hidden='true'
-                        width={20}
-                        height={20}
-                      />
-                      <span className='font-medium'>Delivery Address</span>
-                    </Link>
-
-                    <Link
-                      href='/orders'
-                      onClick={handleCloseMenu}
-                      className='flex items-center gap-3 rounded-2xl px-3 py-3 text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                    >
-                      <Image
-                        src='/assets/icons/file.svg'
-                        alt=''
-                        aria-hidden='true'
-                        width={20}
-                        height={20}
-                      />
-                      <span className='font-medium'>My Orders</span>
-                    </Link>
-
-                    <button
-                      type='button'
-                      onClick={handleLogout}
-                      className='flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left text-sm hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
-                    >
-                      <Image
-                        src='/assets/icons/arrow-circle.svg'
-                        alt=''
-                        aria-hidden='true'
-                        width={20}
-                        height={20}
-                      />
-                      <span className='font-medium'>Logout</span>
-                    </button>
-                  </div>
+                  <AccountMenuContent
+                    onNavigate={handleCloseDesktopMenu}
+                    onLogout={handleLogout}
+                    deliveryMode='link'
+                  />
                 </div>
               ) : null}
             </div>

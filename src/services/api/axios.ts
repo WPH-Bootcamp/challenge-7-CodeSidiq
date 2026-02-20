@@ -9,7 +9,7 @@ if (!baseURL) {
 
 const TOKEN_KEY = 'access_token';
 
-// ✅ single source of truth: event name exported (dipakai hook lain)
+//  single source of truth: event name exported (dipakai hook lain)
 export const AUTH_TOKEN_EVENT = 'foody-auth-token';
 
 const emitAuthTokenChanged = (): void => {
@@ -30,14 +30,12 @@ export const authTokenStorage = {
   set: (token: string, rememberMe: boolean): void => {
     if (typeof window === 'undefined') return;
 
-    // clear both, then set one (avoid stale token)
     window.localStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.removeItem(TOKEN_KEY);
 
     const storage = rememberMe ? window.localStorage : window.sessionStorage;
     storage.setItem(TOKEN_KEY, token);
 
-    // ✅ make auth reactive across app
     emitAuthTokenChanged();
   },
 
@@ -47,14 +45,14 @@ export const authTokenStorage = {
     window.localStorage.removeItem(TOKEN_KEY);
     window.sessionStorage.removeItem(TOKEN_KEY);
 
-    // ✅ make auth reactive across app
     emitAuthTokenChanged();
   },
 };
 
 export const api = axios.create({
   baseURL,
-  headers: { 'Content-Type': 'application/json' },
+  //  JANGAN set Content-Type global.
+  // Axios akan set otomatis untuk JSON request, dan untuk FormData dia set multipart boundary.
 });
 
 // Login/Register harus selalu public (tanpa Authorization)
@@ -63,7 +61,6 @@ const isPublicAuthEndpoint = (url?: string): boolean => {
   return url.includes('/api/auth/login') || url.includes('/api/auth/register');
 };
 
-// AxiosHeaders adalah class/value. Pakai InstanceType supaya TS tidak nangis.
 type AxiosHeadersInstance = InstanceType<typeof AxiosHeaders>;
 
 const ensureAxiosHeaders = (
@@ -76,7 +73,14 @@ const ensureAxiosHeaders = (
 api.interceptors.request.use((config) => {
   const headers = ensureAxiosHeaders(config.headers);
 
-  // ✅ CRITICAL: jangan pernah kirim Authorization untuk login/register
+  //  If sending FormData, do NOT force JSON content-type.
+  // Let axios/browser set multipart boundary correctly.
+  if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+    headers.delete('Content-Type');
+    headers.delete('content-type');
+  }
+
+  //  CRITICAL: jangan pernah kirim Authorization untuk login/register
   if (isPublicAuthEndpoint(config.url)) {
     headers.delete('Authorization');
     headers.delete('authorization');

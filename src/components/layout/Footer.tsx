@@ -9,33 +9,58 @@ type FooterProps = {
 };
 
 const exploreLinks = [
-  { label: 'All Food', href: '#' },
-  { label: 'Nearby', href: '#' },
-  { label: 'Discount', href: '#' },
-  { label: 'Best Seller', href: '#' },
-  { label: 'Delivery', href: '#' },
-  { label: 'Lunch', href: '#' },
-];
+  { label: 'All Food', href: '/category/all' },
+  { label: 'Nearby', href: '/category/nearby' },
+  { label: 'Discount', href: '/category/discount' },
+  { label: 'Best Seller', href: '/category/best-seller' },
+  { label: 'Delivery', href: '/category/delivery' },
+  { label: 'Lunch', href: '/category/lunch' },
+] as const;
 
 const helpLinks = [
-  { label: 'How to Order', href: '#' },
-  { label: 'Payment Methods', href: '#' },
-  { label: 'Track My Order', href: '#' },
-  { label: 'FAQ', href: '#' },
-  { label: 'Contact Us', href: '#' },
-];
+  { label: 'How to Order', href: '/help?topic=how-to-order' },
+  { label: 'Payment Methods', href: '/help?topic=payment-methods' },
+  { label: 'Track My Order', href: '/help?topic=track-my-order' },
+  { label: 'FAQ', href: '/help?topic=faq' },
+  { label: 'Contact Us', href: '/help?topic=contact-us' },
+] as const;
 
 const socialIcons = [
-  { alt: 'Facebook', src: '/assets/icons/facebook.svg', href: '#' },
-  { alt: 'Instagram', src: '/assets/icons/instagram.svg', href: '#' },
-  { alt: 'LinkedIn', src: '/assets/icons/linkedin.svg', href: '#' },
-  { alt: 'TikTok', src: '/assets/icons/tiktok.svg', href: '#' },
-];
+  {
+    alt: 'Facebook',
+    src: '/assets/icons/facebook.svg',
+    href: 'https://www.facebook.com',
+  },
+  {
+    alt: 'Instagram',
+    src: '/assets/icons/instagram.svg',
+    href: 'https://www.instagram.com',
+  },
+  {
+    alt: 'LinkedIn',
+    src: '/assets/icons/linkedin.svg',
+    href: 'https://www.linkedin.com',
+  },
+  {
+    alt: 'TikTok',
+    src: '/assets/icons/tiktok.svg',
+    href: 'https://www.tiktok.com',
+  },
+] as const;
 
 const FOOTER_CONTAINER = cn(
   'mx-auto w-full max-w-[1000px]',
   'px-6 sm:px-6 lg:px-16',
   'py-[clamp(2.5rem,6vw,5rem)]'
+);
+
+const linkBase = cn(
+  'inline-flex items-center',
+  'cursor-pointer',
+  'hover:text-background transition-colors',
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background',
+  'focus-visible:ring-offset-2 focus-visible:ring-offset-foreground',
+  'rounded-sm'
 );
 
 const Footer = ({ className }: FooterProps) => {
@@ -89,11 +114,19 @@ const Footer = ({ className }: FooterProps) => {
 
             <div className='mt-4 flex items-center gap-3'>
               {socialIcons.map((item) => (
-                <Link
+                <a
                   key={item.alt}
                   href={item.href}
+                  target='_blank'
+                  rel='noopener noreferrer'
                   aria-label={item.alt}
-                  className='inline-flex h-11 w-11 items-center justify-center rounded-full bg-background/10 hover:bg-background/15 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background focus-visible:ring-offset-2 focus-visible:ring-offset-foreground'
+                  className={cn(
+                    'inline-flex h-11 w-11 items-center justify-center rounded-full',
+                    'bg-background/10 hover:bg-background/15 transition-colors',
+                    'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-background',
+                    'focus-visible:ring-offset-2 focus-visible:ring-offset-foreground',
+                    'cursor-pointer'
+                  )}
                 >
                   <Image
                     src={item.src}
@@ -103,7 +136,7 @@ const Footer = ({ className }: FooterProps) => {
                     height={40}
                     className='block'
                   />
-                </Link>
+                </a>
               ))}
             </div>
           </div>
@@ -115,7 +148,7 @@ const Footer = ({ className }: FooterProps) => {
               <ul className='mt-4 space-y-3 text-sm text-background/70'>
                 {exploreLinks.map((item) => (
                   <li key={item.label}>
-                    <Link className='hover:text-background' href={item.href}>
+                    <Link href={item.href} className={linkBase}>
                       {item.label}
                     </Link>
                   </li>
@@ -128,7 +161,7 @@ const Footer = ({ className }: FooterProps) => {
               <ul className='mt-4 space-y-3 text-sm text-background/70'>
                 {helpLinks.map((item) => (
                   <li key={item.label}>
-                    <Link className='hover:text-background' href={item.href}>
+                    <Link href={item.href} className={linkBase}>
                       {item.label}
                     </Link>
                   </li>

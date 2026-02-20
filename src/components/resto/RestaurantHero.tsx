@@ -120,11 +120,11 @@ export const RestaurantHero = ({ restaurant }: Props) => {
                   {restaurant.averageRating ?? restaurant.star ?? 0}
                 </span>
               </div>
-              <span className='text-muted-foreground'>·</span>
+              <span className='text-muted-foreground'></span>
               <span className='truncate'>{restaurant.place ?? '-'}</span>
               {formatDistance(restaurant.distance) && (
                 <>
-                  <span className='text-muted-foreground'>·</span>
+                  <span className='text-muted-foreground'></span>
                   <span>{formatDistance(restaurant.distance)}</span>
                 </>
               )}

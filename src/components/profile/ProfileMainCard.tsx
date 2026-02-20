@@ -7,37 +7,64 @@ import * as React from 'react';
 import { ProfileForm } from '@/components/profile/ProfileForm';
 import { ProfileInfoRow } from '@/components/profile/ProfileInfoRow';
 import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
 import type { AuthUser } from '@/types/auth';
 
 type ProfileMainCardProps = {
   user: AuthUser;
 };
 
+const isLikelyAbsoluteUrl = (value: string) => /^https?:\/\//i.test(value);
+
+const getInitial = (name: string) => {
+  const trimmed = name.trim();
+  if (!trimmed) return 'G';
+  return trimmed.slice(0, 1).toUpperCase();
+};
+
+// Keep tokens, avoid hardcoded white.
+// Also keep styling consistent with other cards (ProfileSidebar already uses bg-card + border)
+const CARD = 'w-full rounded-2xl border border-border bg-card p-6 shadow-sm';
+
 export const ProfileMainCard = ({ user }: ProfileMainCardProps) => {
   const [isEditing, setIsEditing] = React.useState(false);
+
+  const displayName = user.name?.trim() ? user.name : 'User';
+
+  const avatarRaw = user.avatar ?? '';
+  const avatarUrl =
+    typeof avatarRaw === 'string' &&
+    avatarRaw.trim() &&
+    isLikelyAbsoluteUrl(avatarRaw)
+      ? avatarRaw
+      : null;
 
   return (
     <section className='w-full'>
       <h1 className='mb-4 text-2xl font-semibold text-foreground'>Profile</h1>
 
-      <div className='w-full rounded-2xl bg-white p-6 shadow-sm'>
+      <div className={CARD}>
         {!isEditing ? (
           <>
             <div className='grid grid-cols-[56px_1fr] items-start gap-4'>
               <div className='relative h-14 w-14 overflow-hidden rounded-full bg-muted'>
-                {user.avatar ? (
+                {avatarUrl ? (
                   <Image
-                    src={user.avatar}
+                    src={avatarUrl}
                     alt='User avatar'
                     fill
                     sizes='56px'
                     className='object-cover'
                   />
-                ) : null}
+                ) : (
+                  <div className='grid h-full w-full place-items-center text-sm font-semibold text-muted-foreground'>
+                    {getInitial(displayName)}
+                  </div>
+                )}
               </div>
 
               <div className='min-w-0'>
-                <ProfileInfoRow label='Name' value={user.name} />
+                <ProfileInfoRow label='Name' value={displayName} />
                 <div className='h-px w-full bg-muted' />
                 <ProfileInfoRow label='Email' value={user.email} />
                 <div className='h-px w-full bg-muted' />
@@ -47,7 +74,9 @@ export const ProfileMainCard = ({ user }: ProfileMainCardProps) => {
 
             <Button
               type='button'
-              className='mt-6 h-12 w-full rounded-full text-sm font-semibold'
+              className={cn(
+                'mt-6 h-12 w-full rounded-full text-sm font-semibold'
+              )}
               onClick={() => setIsEditing(true)}
             >
               Update Profile
@@ -55,6 +84,9 @@ export const ProfileMainCard = ({ user }: ProfileMainCardProps) => {
           </>
         ) : (
           <ProfileForm
+            // Force a fresh form instance when entering edit mode.
+            // This prevents stale file input state (common avatar upload pitfall).
+            key={`profile-form-${user.id}-${user.createdAt}`}
             user={user}
             onCancelAction={() => setIsEditing(false)}
             onSuccessAction={() => setIsEditing(false)}

@@ -83,7 +83,7 @@ const removeItemFromCache = (prev: CartData, itemId: number): CartData => {
   return recomputeCart(nextGroups);
 };
 
-// ✅ Exported single source of truth for "cart kosong"
+// Exported single source of truth for an "empty cart" state.
 export const EMPTY_CART: CartData = recomputeCart([]);
 
 // ---------- shared react-query helpers ----------

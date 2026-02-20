@@ -99,7 +99,7 @@ const sortByMode = (
 const useDerivedList = (rawList: RestaurantListItem[]) => {
   const { searchQuery, sortBy } = useSelector((s: RootState) => s.filters);
 
-  // ✅ Hooks selalu di atas, bukan setelah early return
+  // Hooks must stay at the top, not after an early return.
   return useMemo(() => {
     const filtered = filterByQuery(rawList, searchQuery);
     return sortByMode(filtered, sortBy);

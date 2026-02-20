@@ -120,7 +120,7 @@ const PaymentSuccessClient = () => {
   const txParam = sp.get('tx')?.trim() ?? '';
 
   /**
-   * ✅ Correct useSyncExternalStore:
+   *  Correct useSyncExternalStore:
    * Snapshot MUST be a stable primitive (string) when unchanged.
    * We store raw JSON string here, then parse with useMemo.
    */
