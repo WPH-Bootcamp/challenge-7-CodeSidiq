@@ -1,0 +1,128 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+/* optional: dark variant helper (aman kalau Tailwind proses file ini) */
+@custom-variant dark (&:is(.dark *));
+
+/* -------------------------------------------------------
+  Tailwind v4 theme bridge (shadcn style)
+-------------------------------------------------------- */
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-destructive: var(--destructive);
+
+  /*  Semantic status tokens (biar gak ada bg-green-600 / bg-amber-500 liar) */
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  /*  Rating star token (jangan nyampur dengan brand primary) */
+  --color-star: var(--star);
+
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+/* -------------------------------------------------------
+  LIGHT THEME (Figma tokens)
+-------------------------------------------------------- */
+:root {
+  --radius: 0.625rem;
+
+  --neutral-25: #fcfcfc;
+  --neutral-50: #f9fafb;
+  --neutral-200: #e5e7eb;
+  --neutral-300: #d1d5db;
+  --neutral-400: #9ca3af;
+  --neutral-500: #6b7280;
+  --neutral-600: #4b5563;
+  --neutral-700: #374151;
+  --neutral-800: #1f2937;
+  --neutral-900: #111827;
+
+  --brand-100: #f3e7e6;
+  --brand-200: #e5b7b3;
+  --brand-300: #c8645d;
+  --brand-400: #8b1c13;
+
+  --background: var(--neutral-50);
+  --foreground: var(--neutral-900);
+
+  --card: #ffffff;
+  --card-foreground: var(--neutral-900);
+
+  --popover: #ffffff;
+  --popover-foreground: var(--neutral-900);
+
+  --primary: var(--brand-400);
+  --primary-foreground: #ffffff;
+
+  --secondary: var(--neutral-50);
+  --secondary-foreground: var(--neutral-900);
+
+  --muted: var(--neutral-50);
+  --muted-foreground: var(--neutral-500);
+
+  --accent: var(--brand-100);
+  --accent-foreground: var(--neutral-900);
+
+  --destructive: #dc2626;
+
+  /*  Semantic status colors (light theme) */
+  --success: #16a34a;
+  --success-foreground: #ffffff;
+
+  --warning: #f59e0b;
+  --warning-foreground: var(--neutral-900);
+
+  /*  Rating star color (matches your old star.svg yellow, but now tokenized) */
+  --star: #fdb022;
+
+  --border: var(--neutral-200);
+  --input: var(--neutral-200);
+  --ring: var(--brand-300);
+}
+
+/* -------------------------------------------------------
+  BASE LAYER
+-------------------------------------------------------- */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+}
