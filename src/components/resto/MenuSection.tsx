@@ -4,12 +4,16 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
 
+import { NotAvailableYet } from '@/components/common/NotAvailableYet';
+import { ShowMoreButton } from '@/components/common/ShowMoreButton';
+import {
+  QTY_ICON_ADD,
+  QTY_ICON_MINUS,
+  QTY_ICON_SIZE,
+} from '@/components/icons/qty';
 import { cn, formatCurrencyIDR } from '@/lib/utils';
 import { useAddToCartMutation } from '@/services/queries/cart';
 import type { RestaurantDetail } from '@/types/restaurant';
-
-import { NotAvailableYet } from '@/components/common/NotAvailableYet';
-import { ShowMoreButton } from '@/components/common/ShowMoreButton';
 
 type Props = {
   restaurant: RestaurantDetail;
@@ -275,7 +279,13 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
                             className='inline-flex h-8 w-8 items-center justify-center rounded-full border bg-background text-sm font-semibold hover:bg-muted'
                             aria-label='Decrease quantity'
                           >
-                            -
+                            <Image
+                              src={QTY_ICON_MINUS}
+                              alt=''
+                              aria-hidden='true'
+                              width={QTY_ICON_SIZE}
+                              height={QTY_ICON_SIZE}
+                            />
                           </button>
 
                           <span className='min-w-5 text-center text-xs font-semibold'>
@@ -289,7 +299,13 @@ const MenuSection = ({ restaurant, defaultType = 'all' }: Props) => {
                             className='inline-flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground hover:opacity-90 disabled:opacity-60'
                             aria-label='Increase quantity'
                           >
-                            +
+                            <Image
+                              src={QTY_ICON_ADD}
+                              alt=''
+                              aria-hidden='true'
+                              width={QTY_ICON_SIZE}
+                              height={QTY_ICON_SIZE}
+                            />
                           </button>
                         </div>
                       )}

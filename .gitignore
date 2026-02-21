@@ -32,8 +32,6 @@ build/
 # Env files (never commit secrets)
 # Keep .env.example tracked for documentation
 # -----------------------------
-.env
-.env.local
 .env.development.local
 .env.test.local
 .env.production.local
@@ -78,3 +76,4 @@ next-env.d.ts
 # -----------------------------
 # .vscode/
 # .idea/
+config.bat
