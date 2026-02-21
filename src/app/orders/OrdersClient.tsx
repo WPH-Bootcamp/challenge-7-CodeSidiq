@@ -39,6 +39,9 @@ const normalizeText = (input: string) =>
     .trim()
     .replace(/[^a-z0-9]+/g, '');
 
+const makeReviewKey = (transactionId: string, restaurantId: number) =>
+  `${transactionId}::${restaurantId}`;
+
 type ReviewModalState =
   | { open: false }
   | {
@@ -49,6 +52,29 @@ type ReviewModalState =
       menuIds: number[];
       existingReview: MyReviewItem | null;
     };
+
+type NormalizedOrderRow = {
+  id: number;
+  transactionId: string;
+  status: TransactionStatus;
+
+  restaurantName: string;
+  restaurantLogo?: string;
+  restaurantId: number;
+
+  menuIds: number[];
+  thumb: string;
+
+  itemName: string;
+  qtyText: string;
+
+  total: number;
+
+  existingReview: MyReviewItem | null;
+
+  // Stable key to avoid React collapsing rows
+  rowKey: string;
+};
 
 const OrdersClient = () => {
   const [status, setStatus] = useState<StatusTabValue>('done');
@@ -84,57 +110,133 @@ const OrdersClient = () => {
     }
   );
 
-  const reviewByTransactionId = useMemo(() => {
+  /**
+   * Review binding MUST be per restaurant.
+   * Keying by transactionId only is wrong when 1 transaction includes multiple restaurants.
+   */
+  const reviewByTxAndRestaurant = useMemo(() => {
     const list = myReviewsRes?.data.reviews ?? [];
     const map = new Map<string, MyReviewItem>();
-    for (const r of list) map.set(r.transactionId, r);
+
+    for (const r of list) {
+      // IMPORTANT: we assume review has restaurantId.
+      // If your MyReviewItem type doesn't include it yet, add it in src/types/review.ts
+      // based on Swagger response (do NOT guess fields).
+      const restaurantId = (r as MyReviewItem & { restaurantId?: number })
+        .restaurantId;
+
+      if (typeof r.transactionId !== 'string' || !r.transactionId.trim()) {
+        continue;
+      }
+      if (typeof restaurantId !== 'number' || !Number.isFinite(restaurantId)) {
+        continue;
+      }
+
+      map.set(makeReviewKey(r.transactionId, restaurantId), r);
+    }
+
     return map;
   }, [myReviewsRes]);
 
-  const normalized = useMemo(() => {
+  /**
+   * Fix core bug:
+   * - Flatten each transaction into rows per restaurant group.
+   * - Total must be per restaurant group (group.subtotal + proportional fees).
+   *   Backend only gives transaction-level pricing for serviceFee/deliveryFee/totalPrice.
+   *   We keep UI stable by allocating fees proportionally by group.subtotal.
+   */
+  const normalized = useMemo<NormalizedOrderRow[]>(() => {
     const orders = data?.data.orders ?? [];
 
-    return orders.map((tx) => {
-      const firstGroup = tx.restaurants?.[0];
-      const firstItem = firstGroup?.items?.[0];
+    const rows: NormalizedOrderRow[] = [];
 
-      const restaurantName = firstGroup?.restaurant.name ?? 'Restaurant';
-      const restaurantLogo = firstGroup?.restaurant.logo;
-      const restaurantId = firstGroup?.restaurant.id ?? 0;
+    for (const tx of orders) {
+      const txId = tx.transactionId;
+      const txStatus = tx.status as TransactionStatus;
 
-      const itemName = firstItem?.menuName ?? 'Menu';
-      const qty = firstItem?.quantity ?? 0;
-      const price = firstItem?.price ?? 0;
+      const groups = Array.isArray(tx.restaurants) ? tx.restaurants : [];
 
-      // Prefer food image (thumbnail), fallback to restaurant logo
-      const thumb = firstItem?.image || restaurantLogo || '';
+      const txSubtotal = tx.pricing?.subtotal ?? 0;
+      const txServiceFee = tx.pricing?.serviceFee ?? 0;
+      const txDeliveryFee = tx.pricing?.deliveryFee ?? 0;
 
-      const qtyText =
-        qty && price ? `${qty}  ${moneyIdr(price)}` : qty ? `${qty} item` : '';
+      // Guard: if subtotal is invalid, avoid divide-by-zero and just use group.subtotal as total.
+      const safeTxSubtotal =
+        typeof txSubtotal === 'number' && txSubtotal > 0 ? txSubtotal : 0;
 
-      const menuIdsRaw = (firstGroup?.items ?? []).map((i) => i.menuId);
-      const menuIds = Array.from(new Set(menuIdsRaw)).filter(
-        (x) => typeof x === 'number' && Number.isFinite(x)
-      );
+      for (const group of groups) {
+        const restaurantName = group.restaurant?.name ?? 'Restaurant';
+        const restaurantLogo = group.restaurant?.logo;
+        const restaurantId = group.restaurant?.id ?? 0;
 
-      const transactionId = tx.transactionId;
+        const items = Array.isArray(group.items) ? group.items : [];
+        const firstItem = items[0];
 
-      return {
-        id: tx.id,
-        transactionId,
-        status: tx.status as TransactionStatus,
-        restaurantName,
-        restaurantLogo,
-        restaurantId,
-        menuIds,
-        thumb,
-        itemName,
-        qtyText,
-        total: tx.pricing?.totalPrice ?? 0,
-        existingReview: reviewByTransactionId.get(transactionId) ?? null,
-      };
-    });
-  }, [data, reviewByTransactionId]);
+        const itemName = firstItem?.menuName ?? 'Menu';
+        const qty = firstItem?.quantity ?? 0;
+        const price = firstItem?.price ?? 0;
+
+        // Prefer food image (thumbnail), fallback to restaurant logo
+        const thumb = firstItem?.image || restaurantLogo || '';
+
+        const qtyText =
+          qty && price
+            ? `${qty}  ${moneyIdr(price)}`
+            : qty
+              ? `${qty} item`
+              : '';
+
+        const menuIdsRaw = items.map((i) => i.menuId);
+        const menuIds = Array.from(new Set(menuIdsRaw)).filter(
+          (x) => typeof x === 'number' && Number.isFinite(x)
+        );
+
+        const groupSubtotal = group.subtotal ?? 0;
+
+        // Allocate fees proportionally by subtotal, to keep "Total" per restaurant meaningful.
+        // If subtotal is missing/zero, fallback to groupSubtotal only.
+        const ratio =
+          safeTxSubtotal > 0 && typeof groupSubtotal === 'number'
+            ? groupSubtotal / safeTxSubtotal
+            : 0;
+
+        const allocatedServiceFee = Math.round(txServiceFee * ratio);
+        const allocatedDeliveryFee = Math.round(txDeliveryFee * ratio);
+
+        const total =
+          typeof groupSubtotal === 'number'
+            ? groupSubtotal + allocatedServiceFee + allocatedDeliveryFee
+            : 0;
+
+        const existingReview =
+          typeof restaurantId === 'number' && restaurantId > 0
+            ? (reviewByTxAndRestaurant.get(makeReviewKey(txId, restaurantId)) ??
+              null)
+            : null;
+
+        // Stable row key: (transactionId + restaurantId)
+        const rowKey = makeReviewKey(txId, restaurantId);
+
+        rows.push({
+          id: tx.id,
+          transactionId: txId,
+          status: txStatus,
+          restaurantName,
+          restaurantLogo,
+          restaurantId,
+          menuIds,
+          thumb,
+          itemName,
+          qtyText,
+          total,
+          existingReview,
+          rowKey,
+        });
+      }
+    }
+
+    return rows;
+  }, [data, reviewByTxAndRestaurant]);
 
   const filtered = useMemo(() => {
     const q = normalizeText(search);
@@ -259,7 +361,7 @@ const OrdersClient = () => {
 
                   return (
                     <article
-                      key={o.transactionId}
+                      key={o.rowKey}
                       className='rounded-2xl border bg-background px-4 py-4 sm:px-5 sm:py-4'
                     >
                       {/* Top: restaurant */}
@@ -354,7 +456,9 @@ const OrdersClient = () => {
       {/* Modal (key ensures clean initial state without effect reset) */}
       {reviewModal.open ? (
         <ReviewModal
-          key={`${reviewModal.transactionId}-${reviewModal.existingReview?.id ?? 'new'}`}
+          key={`${reviewModal.transactionId}::${reviewModal.restaurantId}::${
+            reviewModal.existingReview?.id ?? 'new'
+          }`}
           open={reviewModal.open}
           onClose={closeReviewModal}
           transactionId={reviewModal.transactionId}
